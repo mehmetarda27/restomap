@@ -145,7 +145,7 @@
       <canvas class="delivera-curtain-canvas" aria-hidden="true"></canvas>
       <section class="delivera-curtain-card" aria-labelledby="delivera-curtain-title">
         <div class="delivera-curtain-symbol" aria-hidden="true">&gt;_</div>
-        <p class="delivera-curtain-kicker">Delivera Express · Sistem bildirimi</p>
+        <p class="delivera-curtain-kicker">RESTOMAP · Sistem bildirimi</p>
         <h1 class="delivera-curtain-title" id="delivera-curtain-title">Sistem geçici olarak kullanılamıyor</h1>
         <p class="delivera-curtain-copy">Veri tabanı bağlantı hatası algılandı. Lütfen teknik destek ekibiyle iletişime geçin.</p>
         <div class="delivera-curtain-code">ERR_DATABASE_CONNECTION</div>

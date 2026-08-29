@@ -60,7 +60,9 @@ function resolveDbFile() {
 
   const configured = process.env.DATABASE_PATH || process.env.DB_PATH || process.env.DELIVERA_DB_FILE;
   if (!configured) {
-    return path.join(ROOT, "delivera.sqlite");
+    const currentDbFile = path.join(ROOT, "restomap.sqlite");
+    const legacyDbFile = path.join(ROOT, "delivera.sqlite");
+    return fs.existsSync(currentDbFile) || !fs.existsSync(legacyDbFile) ? currentDbFile : legacyDbFile;
   }
 
   if (path.isAbsolute(configured)) {

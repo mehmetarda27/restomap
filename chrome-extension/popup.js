@@ -261,7 +261,7 @@ async function handleSend() {
       [STORAGE_KEYS.lastError]: "",
       [STORAGE_KEYS.lastPostStatus]: "Manuel gonderim basarili",
     });
-    setStatus("Delivera'ya gonderildi", "success");
+    setStatus("RESTOMAP'e gönderildi", "success");
   } catch (error) {
     await saveStorageIfChanged({
       [STORAGE_KEYS.lastError]: error.message || "Manuel gonderim basarisiz",
@@ -273,7 +273,7 @@ async function handleSend() {
         extracted = await extractOrderPayload(tab.id);
       }
       await copyText(extracted.rawText);
-      setStatus("API'ye gonderilemedi ama metin kopyalandi. Delivera paneline yapistirabilirsin.", "warn");
+      setStatus("API'ye gönderilemedi ama metin kopyalandı. RESTOMAP paneline yapıştırabilirsin.", "warn");
     } catch (fallbackError) {
       setStatus(fallbackError.message || error.message || "Islem basarisiz.", "error");
     }

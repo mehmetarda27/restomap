@@ -46,10 +46,10 @@ function receiptHtml(pkg, restaurantName, settings = {}) {
   const copies = Math.max(1, Math.min(5, Number(settings.copies) || 1));
   const items = orderItems(pkg);
   const receipt = (copy) => `<article class="receipt${copy < copies ? " page" : ""}">
-    <header><h1>DELIVERA EXPRESS</h1><h2>${safe(restaurantName || "Restoran")}</h2><b>${safe(pkg.trackingNo || pkg.externalOrderNo || pkg.id)}</b></header>
+    <header><h1>RESTOMAP</h1><h2>${safe(restaurantName || "Restoran")}</h2><b>${safe(pkg.trackingNo || pkg.externalOrderNo || pkg.id)}</b></header>
     <div class="row"><b>Müşteri</b><span>${safe(pkg.customerName || "-")}</span></div><div class="row"><b>Telefon</b><span>${safe(pkg.phone || "-")}</span></div><div class="row"><b>Ödeme</b><span>${safe(pkg.paymentMethod || "-")} · ${safe(money(pkg.orderAmount))}</span></div>
     <section><h3>SİPARİŞ İÇERİĞİ</h3>${items.length ? items.map((item) => `<div class="item"><div><b>${item.quantity}× ${safe(item.name)}</b>${item.unitPrice !== null ? `<small>Birim: ${safe(money(item.unitPrice))}</small>` : ""}${item.details.map((detail) => `<small>${safe(detail)}</small>`).join("")}</div><strong>${item.total === null ? "-" : safe(money(item.total))}</strong></div>`).join("") : `<p>Ürün bilgisi platformdan gelmedi.</p>`}</section>
-    <section><h3>TESLİMAT ADRESİ</h3><p>${safe(pkg.deliveryAddress || "-")}</p></section>${pkg.customerNote ? `<section><h3>MÜŞTERİ NOTU</h3><p>${safe(pkg.customerNote)}</p></section>` : ""}<footer>Delivera Express altyapısıyla yönetilmektedir.${copies > 1 ? `<br>Kopya ${copy}/${copies}` : ""}</footer></article>`;
+    <section><h3>TESLİMAT ADRESİ</h3><p>${safe(pkg.deliveryAddress || "-")}</p></section>${pkg.customerNote ? `<section><h3>MÜŞTERİ NOTU</h3><p>${safe(pkg.customerNote)}</p></section>` : ""}<footer>RESTOMAP altyapısıyla yönetilmektedir.${copies > 1 ? `<br>Kopya ${copy}/${copies}` : ""}</footer></article>`;
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><style>@page{size:${paperSize === "a4" ? "A4 portrait" : `${paperSize} auto`};margin:${paperSize === "a4" ? "10mm" : "0"}}*{box-sizing:border-box}body{width:${width};margin:auto;padding:2mm;color:#111;font:12px Arial,sans-serif}.receipt{width:100%}.page{page-break-after:always}header{text-align:center;border:2px solid #111;padding:7px;margin-bottom:8px}h1{font-size:20px;margin:0}h2{font-size:15px;margin:4px 0}.row,.item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:6px 0;border-bottom:1px dashed #888}.row span{text-align:right}section{margin-top:8px;border:1px solid #555;padding:6px}h3{font-size:12px;text-align:center;margin:0 0 5px}.item small{display:block;font-size:10px}p{margin:4px 0;overflow-wrap:anywhere}footer{text-align:center;border-top:2px solid #111;margin-top:10px;padding-top:7px;font-weight:bold}</style></head><body>${Array.from({ length: copies }, (_, index) => receipt(index + 1)).join("")}</body></html>`;
 }
 
@@ -81,7 +81,7 @@ async function pollOrders() {
     const printerSettings = settingsPayload.data?.printerSettings || {};
     for (const pkg of incoming) {
       const packageId = String(pkg.id || pkg.trackingNo || pkg.externalOrderNo);
-      await ipcRenderer.invoke("delivera:notification", { title: "Delivera Express - Yeni Sipariş", body: `${pkg.trackingNo || packageId} · ${pkg.customerName || "Müşteri"}` });
+      await ipcRenderer.invoke("delivera:notification", { title: "RESTOMAP - Yeni Sipariş", body: `${pkg.trackingNo || packageId} · ${pkg.customerName || "Müşteri"}` });
       await ipcRenderer.invoke("delivera:auto-print-receipt", { packageId, trackingNo: pkg.trackingNo || packageId, customerName: pkg.customerName || "Müşteri", html: receiptHtml(pkg, restaurantName, printerSettings) }).catch(() => {});
     }
   } catch {

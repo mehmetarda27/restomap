@@ -1,8 +1,8 @@
 {
-  "name": "delivera-express",
+  "name": "restomap",
   "version": "1.0.0",
   "private": true,
-  "description": "Delivera Express multi-restaurant courier dispatch platform",
+  "description": "RESTOMAP multi-restaurant courier dispatch platform",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

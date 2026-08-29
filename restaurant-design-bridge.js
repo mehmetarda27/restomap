@@ -3,14 +3,27 @@
 
   window.deliveraDesktop?.markBridgeReady?.();
 
-  const TOKEN_KEY = "deliveraRestaurantToken";
-  const REFRESH_KEY = "deliveraRestaurantRefreshToken";
-  const ID_KEY = "deliveraRestaurantId";
-  const API_KEY = "deliveraRestaurantApiKey";
-  const SEEN_ORDER_ALERTS_KEY = "deliveraRestaurantSeenOrderAlerts";
-  const KIOSK_MODE_KEY = "deliveraRestaurantKioskMode";
-  const KIOSK_PRINTED_ORDERS_KEY = "deliveraRestaurantKioskPrintedOrders";
-  const PLATFORM_ATTENTION_ACK_KEY = "deliveraRestaurantPlatformAttentionAcknowledged";
+  function migratedStorageKey(currentKey, legacyKey) {
+    if (localStorage.getItem(currentKey) === null && localStorage.getItem(legacyKey) !== null) {
+      localStorage.setItem(currentKey, localStorage.getItem(legacyKey));
+    }
+    return currentKey;
+  }
+
+  const TOKEN_KEY = migratedStorageKey("restomapRestaurantToken", "deliveraRestaurantToken");
+  const REFRESH_KEY = migratedStorageKey("restomapRestaurantRefreshToken", "deliveraRestaurantRefreshToken");
+  const ID_KEY = migratedStorageKey("restomapRestaurantId", "deliveraRestaurantId");
+  const API_KEY = migratedStorageKey("restomapRestaurantApiKey", "deliveraRestaurantApiKey");
+  const LEGACY_AUTH_KEYS = [
+    "deliveraRestaurantToken",
+    "deliveraRestaurantRefreshToken",
+    "deliveraRestaurantId",
+    "deliveraRestaurantApiKey",
+  ];
+  const SEEN_ORDER_ALERTS_KEY = migratedStorageKey("restomapRestaurantSeenOrderAlerts", "deliveraRestaurantSeenOrderAlerts");
+  const KIOSK_MODE_KEY = migratedStorageKey("restomapRestaurantKioskMode", "deliveraRestaurantKioskMode");
+  const KIOSK_PRINTED_ORDERS_KEY = migratedStorageKey("restomapRestaurantKioskPrintedOrders", "deliveraRestaurantKioskPrintedOrders");
+  const PLATFORM_ATTENTION_ACK_KEY = migratedStorageKey("restomapRestaurantPlatformAttentionAcknowledged", "deliveraRestaurantPlatformAttentionAcknowledged");
   const INITIAL_ORDER_ALERT_WINDOW_MS = 30 * 60 * 1000;
   const terminalStatuses = new Set(["delivered", "failed", "rejected", "cancelled", "canceled"]);
   let pushInitialized = false;
@@ -20,7 +33,7 @@
   let platformAttentionTimer = null;
   let platformTitleTimer = null;
   let platformAttentionPackageId = "";
-  const normalDocumentTitle = "Restoran Paneli | Delivera Express";
+  const normalDocumentTitle = "Restoran Paneli | RESTOMAP";
   const state = {
     token: localStorage.getItem(TOKEN_KEY) || "",
     refreshToken: localStorage.getItem(REFRESH_KEY) || "",
@@ -169,9 +182,30 @@
   function clearAuth() {
     state.token = "";
     state.refreshToken = "";
-    [TOKEN_KEY, REFRESH_KEY, ID_KEY, API_KEY].forEach((key) => localStorage.removeItem(key));
+    [TOKEN_KEY, REFRESH_KEY, ID_KEY, API_KEY, ...LEGACY_AUTH_KEYS]
+      .forEach((key) => localStorage.removeItem(key));
     state.stream?.close();
     clearInterval(state.poll);
+  }
+
+  function logout() {
+    const token = state.token;
+    const refreshToken = state.refreshToken;
+    if (refreshToken) {
+      fetch("/api/restaurant/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ refreshToken }),
+        keepalive: true,
+      }).catch(() => {
+        // Ağ hatası yerel oturumun kapatılmasını engellememeli.
+      });
+    }
+    clearAuth();
+    location.reload();
   }
 
   async function loadPanelData() {
@@ -195,7 +229,7 @@
   }
 
   function injectShell() {
-    document.title = "Restoran Paneli | Delivera Express";
+    document.title = "Restoran Paneli | RESTOMAP";
     const style = document.createElement("style");
     style.textContent = `
       html,body{height:100%;overflow:hidden} body{min-width:1024px}
@@ -401,7 +435,7 @@
   }
 
   function showLogin(message = "Restoran paneline giriş yapın.") {
-    window.DeliveraLoginShell.show({
+    window.RestomapLoginShell.show({
       title: "Restoran Girişi",
       description: message,
       fields: `<label class="delivera-auth-field full"><span>Kullanıcı adı</span><input name="username" autocomplete="username"></label><label class="delivera-auth-field full"><span>Parola</span><input name="password" type="password" autocomplete="current-password"></label><div class="delivera-auth-separator">veya API erişimi</div><label class="delivera-auth-field"><span>Restoran ID</span><input name="restaurantId"></label><label class="delivera-auth-field"><span>API key</span><input name="apiKey" type="password"></label>`,
@@ -418,7 +452,7 @@
           body: JSON.stringify(restaurantId && apiKey ? { restaurantId, apiKey } : { username: form.get("username"), password: form.get("password") }),
         }, false);
         saveAuth(auth);
-        window.DeliveraLoginShell.hide();
+        window.RestomapLoginShell.hide();
         hydrate(auth.state);
         await loadPanelData();
         await notificationRequest;
@@ -524,7 +558,7 @@
       }, 10 * 1000);
       navigator.vibrate?.([250, 100, 500]);
       window.deliveraDesktop?.showNotification?.({
-        title: "Delivera Express - Yeni Sipariş",
+        title: "RESTOMAP - Yeni Sipariş",
         body: `${incoming.length} yeni sipariş geldi. Fiş varsayılan yazıcıya gönderiliyor.`,
       }).catch(() => {});
       if (window.deliveraDesktop?.autoPrintReceipt) {
@@ -544,7 +578,7 @@
         incoming.filter((pkg) => !terminalStatuses.has(pkg.status)).forEach(kioskPrintPackage);
       }
       if (!window.deliveraDesktop && !pushInitialized && notificationPermission() === "granted") {
-        navigator.serviceWorker?.getRegistration("/").then((registration) => registration?.showNotification("Delivera Express - Yeni Sipariş", {
+        navigator.serviceWorker?.getRegistration("/").then((registration) => registration?.showNotification("RESTOMAP - Yeni Sipariş", {
           body: `${incoming.length} yeni sipariş geldi.`, tag: "delivera-restaurant-orders", renotify: true, requireInteraction: true,
           vibrate: [250, 100, 500], data: { url: "/restaurant-panel" },
         })).catch(() => {});
@@ -776,7 +810,7 @@
     const customHeader = String(state.panelData.printerSettings?.header || "").trim();
     const receiptCount = Math.max(1, Math.min(5, Number(copies) || 1));
     const receipt = (copyNumber) => `<article class="receipt${copyNumber < receiptCount ? " page-break" : ""}">
-      <header class="brand"><div class="checkers">■ □ ■ □ ■ □ ■ □ ■ □</div><div class="brand-name">DELIVERA <span>EXPRESS</span></div><div class="brand-tagline">Hızlı · Güvenli · Takip Edilebilir Teslimat</div><div class="checkers">□ ■ □ ■ □ ■ □ ■ □ ■</div></header>
+      <header class="brand"><div class="checkers">■ □ ■ □ ■ □ ■ □ ■ □</div><div class="brand-name">RESTOMAP</div><div class="brand-tagline">Tamamı Paket Takip Sistemi</div><div class="checkers">□ ■ □ ■ □ ■ □ ■ □ ■</div></header>
       ${customHeader ? `<div class="custom-header">${safe(customHeader)}</div>` : ""}
       <section class="restaurant"><h1>${safe(restaurant.name || "Restoran")}</h1><div>${invoice ? "FATURALI SİPARİŞ FİŞİ" : "SİPARİŞ / TESLİMAT FİŞİ"}</div></section>
       <div class="tracking"><small>PAKET NUMARASI</small><strong>${safe(pkg.trackingNo || pkg.externalOrderNo || pkg.id)}</strong></div>
@@ -790,7 +824,7 @@
       ${receiptItemsHtml(pkg)}
       <section class="block"><b>TESLİMAT ADRESİ</b><p>${safe(pkg.deliveryAddress || "-")}</p></section>
       ${pkg.customerNote ? `<section class="block note"><b>MÜŞTERİ NOTU</b><p>${safe(pkg.customerNote)}</p></section>` : ""}
-      <footer><strong>DELIVERA EXPRESS</strong><span>Bu teslimat Delivera Express altyapısıyla yönetilmektedir.</span><small>Restoran · Kurye · Operasyon tek sistemde</small>${receiptCount > 1 ? `<small>Kopya ${copyNumber}/${receiptCount}</small>` : ""}</footer>
+      <footer><strong>RESTOMAP</strong><span>Bu teslimat RESTOMAP altyapısıyla yönetilmektedir.</span><small>Restoran · Kurye · Operasyon tek sistemde</small>${receiptCount > 1 ? `<small>Kopya ${copyNumber}/${receiptCount}</small>` : ""}</footer>
     </article>`;
     return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${invoice ? "Faturalı Fiş" : "Sipariş Fişi"} · ${safe(pkg.trackingNo || pkg.id)}</title><style>
       @page{size:${pageWidth}${thermal ? " auto" : " portrait"};margin:${thermal ? "0" : "10mm"}}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}body{width:${contentWidth};max-width:100%;margin:0 auto;padding:${thermal ? "2mm" : "0"};font-size:${size === "58mm" ? "10px" : size === "80mm" ? "12px" : "14px"};line-height:1.35}.receipt{width:100%;margin:0 auto}.page-break{break-after:page;page-break-after:always}.brand{text-align:center;border:2px solid #111;padding:${thermal ? "2mm 1mm" : "14px"};margin-bottom:${thermal ? "2mm" : "18px"}.checkers{font-size:${thermal ? "7px" : "11px"};letter-spacing:1px;white-space:nowrap;overflow:hidden}.brand-name{font-size:${size === "58mm" ? "17px" : size === "80mm" ? "22px" : "32px"};font-weight:900;letter-spacing:.5px}.brand-name span{display:${thermal ? "block" : "inline"};font-size:.58em}.brand-tagline{font-size:.72em;font-weight:700;margin:3px 0}.custom-header{text-align:center;font-weight:800;border:1px dashed #555;padding:6px;margin-bottom:8px}.restaurant{text-align:center;border-bottom:1px dashed #555;padding-bottom:8px;margin-bottom:8px}.restaurant h1{font-size:1.35em;margin:0 0 3px}.restaurant div{font-weight:800;font-size:.88em}.tracking{text-align:center;background:#f2f2f2;border:1px solid #111;padding:${thermal ? "6px 3px" : "12px"};margin-bottom:8px}.tracking small{display:block;font-size:.72em}.tracking strong{display:block;font-size:1.45em;letter-spacing:.7px}.row{display:grid;grid-template-columns:${thermal ? "38% 62%" : "30% 70%"};gap:6px;border-bottom:1px dashed #aaa;padding:${thermal ? "5px 0" : "8px 0"}.row span{text-align:right;overflow-wrap:anywhere}.row.total{border:1px solid #111;margin:7px 0;padding:7px}.row.total span strong{font-size:1.18em}.items{margin-top:8px;border-top:2px solid #111;border-bottom:2px solid #111;padding:6px 0}.items-title{text-align:center;font-weight:900;font-size:1.08em;margin-bottom:5px}.items-head,.item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:4px 0}.items-head{border-bottom:1px solid #111;font-size:.78em}.item{border-bottom:1px dashed #aaa;align-items:start}.item:last-child{border-bottom:0}.item>div{min-width:0}.item strong{display:block;overflow-wrap:anywhere}.item small{display:block;color:#333;font-size:.78em;overflow-wrap:anywhere}.items-empty{text-align:center;font-style:italic;padding:5px}.block{margin-top:8px;border:1px solid #777;padding:${thermal ? "6px" : "10px"}.block>b{font-size:.78em}.block p{margin:4px 0 0;overflow-wrap:anywhere}.note{border-style:dashed}footer{text-align:center;border-top:2px solid #111;margin-top:${thermal ? "10px" : "18px"};padding-top:8px}footer strong,footer span,footer small{display:block}footer strong{font-size:1.15em}footer span{font-weight:700;margin:3px 0}footer small{font-size:.72em;margin-top:3px}@media print{html,body{background:#fff}.receipt{box-shadow:none}}
@@ -1354,7 +1388,7 @@
   }, { once: true });
   refs.phoneButton?.addEventListener("click", phoneOrderModal);
   refs.sidebarLinks.forEach((link) => {
-    const handler = () => normalize(link.textContent).includes("çıkış yap") ? (clearAuth(), location.reload()) : showRoute(link.dataset.route);
+    const handler = () => normalize(link.textContent).includes("çıkış yap") ? logout() : showRoute(link.dataset.route);
     link.addEventListener("click", handler);
     link.addEventListener("keydown", (event) => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); handler(); } });
   });

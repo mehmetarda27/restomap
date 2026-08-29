@@ -16,14 +16,16 @@ function normalizePlatform(value) {
   return trimmed(value).toLowerCase().replaceAll("_", " ").replaceAll("-", " ");
 }
 
-function callbackEnvKey(platform) {
-  return `DELIVERA_PLATFORM_CALLBACK_URL_${trimmed(platform).toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`;
+function callbackEnvKeys(platform) {
+  const suffix = trimmed(platform).toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+  return [`RESTOMAP_PLATFORM_CALLBACK_URL_${suffix}`, `DELIVERA_PLATFORM_CALLBACK_URL_${suffix}`];
 }
 
 function resolveCallbackUrl(account, packageRecord) {
   return trimmed(
     account?.callback_url ||
-    process.env[callbackEnvKey(packageRecord?.sourcePlatform)] ||
+    callbackEnvKeys(packageRecord?.sourcePlatform).map((key) => process.env[key]).find(Boolean) ||
+    process.env.RESTOMAP_PLATFORM_CALLBACK_URL ||
     process.env.DELIVERA_PLATFORM_CALLBACK_URL ||
     process.env.PLATFORM_CALLBACK_URL
   );
@@ -73,7 +75,8 @@ async function sendPlatformStatusCallback({ db, packageRecord, status, meta = {}
   }
 
   const payload = JSON.stringify({
-    event: "delivera.status.updated",
+    event: "restomap.status.updated",
+    legacyEvent: "delivera.status.updated",
     platform: packageRecord.sourcePlatform,
     orderId: packageRecord.externalOrderId || packageRecord.externalOrderNo,
     packageId: packageRecord.id,
@@ -95,8 +98,12 @@ async function sendPlatformStatusCallback({ db, packageRecord, status, meta = {}
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
+        "X-Restomap-Event": "status.updated",
         "X-Delivera-Event": "status.updated",
-        ...(secret ? { "X-Delivera-Signature": hmacHex(secret, payload) } : {}),
+        ...(secret ? {
+          "X-Restomap-Signature": hmacHex(secret, payload),
+          "X-Delivera-Signature": hmacHex(secret, payload),
+        } : {}),
       },
       body: payload,
     });

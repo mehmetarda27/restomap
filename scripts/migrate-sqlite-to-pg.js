@@ -8,7 +8,15 @@ try {
 } catch {}
 
 const ROOT = path.resolve(__dirname, "..");
-const SQLITE_FILE = path.resolve(process.env.DATABASE_PATH || process.env.DB_PATH || process.env.DELIVERA_DB_FILE || path.join(ROOT, "delivera.sqlite"));
+const currentDbFile = path.join(ROOT, "restomap.sqlite");
+const legacyDbFile = path.join(ROOT, "delivera.sqlite");
+const SQLITE_FILE = path.resolve(
+  process.env.DATABASE_PATH ||
+  process.env.DB_PATH ||
+  process.env.RESTOMAP_DB_FILE ||
+  process.env.DELIVERA_DB_FILE ||
+  (fs.existsSync(currentDbFile) || !fs.existsSync(legacyDbFile) ? currentDbFile : legacyDbFile)
+);
 const { databaseUrl } = require("../db/config");
 const PG_URL = databaseUrl();
 

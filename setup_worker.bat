@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-echo Installing Delivera Express Python worker dependencies...
+echo Installing RESTOMAP Python worker dependencies...
 echo.
 
 python --version

@@ -92,7 +92,7 @@ test("new restaurant design filters closed orders and subscribes to named live e
     platformAttention.querySelector("[data-platform-seen]").click();
     assert.equal(dom.window.document.querySelector(".zg-platform-attention-root"), null);
     assert.ok(alarmOscillators.every((oscillator) => oscillator.stopCalls >= 2), "Gördüm aktif alarm seslerini durdurmalı");
-    assert.match(dom.window.localStorage.getItem("deliveraRestaurantPlatformAttentionAcknowledged"), /pkg_active/);
+    assert.match(dom.window.localStorage.getItem("restomapRestaurantPlatformAttentionAcknowledged"), /pkg_active/);
     hooks.hydrate({
       packages: [{ id: "pkg_phone", trackingNo: "PKT-PHONE", status: "pending", source: "phone", createdAt: today }],
       couriers: [],
@@ -132,8 +132,8 @@ test("new restaurant design filters closed orders and subscribes to named live e
     assert.ok(printFrame, "manuel baskı popup yerine sayfa içi baskı çerçevesi oluşturmalı");
     const printedHtml = printFrame.srcdoc;
     assert.match(printedHtml, /@page\{size:58mm auto/);
-    assert.match(printedHtml, /DELIVERA <span>EXPRESS<\/span>/);
-    assert.match(printedHtml, /Delivera Express altyapısıyla yönetilmektedir/);
+    assert.match(printedHtml, /RESTOMAP/);
+    assert.match(printedHtml, /RESTOMAP altyapısıyla yönetilmektedir/);
     assert.match(printedHtml, /SİPARİŞ İÇERİĞİ/);
     assert.match(printedHtml, /2× Tantuni/);
     assert.match(printedHtml, /Birim: 125,00 ₺/);
@@ -153,6 +153,24 @@ test("new restaurant design filters closed orders and subscribes to named live e
       Array.from(hooks.restaurantLiveMapCouriers({ latitude: 36.8121, longitude: 34.6415 }), (courier) => courier.id),
       ["online"],
     );
+
+    dom.window.localStorage.setItem("deliveraRestaurantRefreshToken", "legacy-refresh");
+    dom.window.localStorage.setItem("deliveraRestaurantId", "legacy-id");
+    dom.window.localStorage.setItem("deliveraRestaurantApiKey", "legacy-api-key");
+    const logoutLink = Array.from(dom.window.document.querySelectorAll("aside a"))
+      .find((link) => link.textContent.includes("Çıkış Yap"));
+    assert.ok(logoutLink, "restoran çıkış bağlantısı bulunmalı");
+    logoutLink.click();
+    [
+      "restomapRestaurantToken",
+      "restomapRestaurantRefreshToken",
+      "restomapRestaurantId",
+      "restomapRestaurantApiKey",
+      "deliveraRestaurantToken",
+      "deliveraRestaurantRefreshToken",
+      "deliveraRestaurantId",
+      "deliveraRestaurantApiKey",
+    ].forEach((key) => assert.equal(dom.window.localStorage.getItem(key), null, `${key} çıkışta silinmeli`));
   } finally {
     dom.window.close();
   }

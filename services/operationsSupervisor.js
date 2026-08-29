@@ -455,7 +455,7 @@ function createOperationsSupervisor(options = {}) {
 
   function commandHelp() {
     return [
-      "Delivera operasyon denetçisi:",
+      "RESTOMAP operasyon denetçisi:",
       "/durum — sistem ve operasyon özeti",
       "/kritik — açık olaylar ve önem düzeyi",
       "/teshis — atama ve bağlantı neden analizi",

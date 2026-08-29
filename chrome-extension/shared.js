@@ -221,7 +221,7 @@
       ...(dedupeKey ? { dedupeKey } : {}),
     };
 
-    console.log(mode === "auto" ? "auto posting to Delivera" : "manual posting to Delivera", payload);
+    console.log(mode === "auto" ? "auto posting to RESTOMAP" : "manual posting to RESTOMAP", payload);
     console.log("post url", requestUrl);
     console.log(`${mode} backendUrl`, backendUrl);
     console.log(`${mode} token exists`, Boolean(token));

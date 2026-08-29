@@ -87,7 +87,7 @@ function write(level, message, meta = {}) {
     ts: new Date().toISOString(),
     level,
     message,
-    service: "delivera-express",
+    service: "restomap",
     ...meta,
   };
 

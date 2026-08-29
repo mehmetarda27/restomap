@@ -2,6 +2,8 @@ try {
   require("dotenv").config({ path: "./.env" });
 } catch {}
 
+require("../services/envCompatibility").applyBrandEnvCompatibility();
+
 const { Worker, QueueEvents } = require("bullmq");
 const dbFacade = require("../db");
 const { getDb, close } = dbFacade;
@@ -220,7 +222,7 @@ async function main() {
   }, Math.max(5_000, Number(process.env.POSENTEGRA_OUTBOX_POLL_MS || 10_000)));
   posentegraSweepTimer.unref();
   posentegraOutbox.processDue().catch((error) => logger.warn("Initial Posentegra outbox sweep failed", { error }));
-  logger.info("Delivera queue worker started", {
+  logger.info("RESTOMAP queue worker started", {
     queues: Object.values(JOB_TYPES),
     concurrency: QUEUE_CONCURRENCY,
     retryPolicy: DEFAULT_RETRY_POLICY,

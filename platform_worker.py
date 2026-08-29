@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Delivera Express platform auto-feeder worker.
+RESTOMAP platform auto-feeder worker.
 
 Polls active platform accounts, normalizes new orders, and feeds them into the
-existing Delivera integration API. The backend remains the source of truth for
+existing RESTOMAP integration API. The backend remains the source of truth for
 package creation, validation, duplicate handling, assignment, audit logs, and
 webhook logs.
 """
@@ -504,7 +504,7 @@ class PlatformAdapter:
         if api_key and api_secret:
             raw = f"{api_key}:{api_secret}".encode("utf-8")
             headers["Authorization"] = "Basic " + base64.b64encode(raw).decode("ascii")
-            headers["User-Agent"] = "DeliveraExpress/1.0"
+            headers["User-Agent"] = "RESTOMAP/1.0"
 
         return headers
 
@@ -652,7 +652,7 @@ class PlatformWorker:
     def run_forever(self) -> None:
         signal.signal(signal.SIGINT, self.stop)
         signal.signal(signal.SIGTERM, self.stop)
-        logger.info("Delivera platform worker started poll_interval=%ss", self.poll_interval)
+        logger.info("RESTOMAP platform worker started poll_interval=%ss", self.poll_interval)
         while self.running:
             started = time.monotonic()
             try:
@@ -705,14 +705,14 @@ class PlatformWorker:
                 logger.info("Fed order platform=%s restaurant=%s order=%s status=%s", account.platform, account.restaurant_id, order_id, response.status_code)
             elif response.status_code == 429:
                 retry_after = response.headers.get("Retry-After", "5")
-                logger.warning("Delivera API rate limited; sleeping %ss", retry_after)
+                logger.warning("RESTOMAP API rate limited; sleeping %ss", retry_after)
                 try:
                     time.sleep(float(retry_after))
                 except ValueError:
                     time.sleep(5)
             else:
                 logger.error(
-                    "Delivera API rejected order platform=%s restaurant=%s order=%s status=%s body=%s",
+                    "RESTOMAP API rejected order platform=%s restaurant=%s order=%s status=%s body=%s",
                     account.platform,
                     account.restaurant_id,
                     order_id,
@@ -726,7 +726,7 @@ class PlatformWorker:
 def main() -> int:
     worker = PlatformWorker()
     worker.run_forever()
-    logger.info("Delivera platform worker stopped")
+    logger.info("RESTOMAP platform worker stopped")
     return 0
 
 

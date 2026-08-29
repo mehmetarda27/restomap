@@ -1,4 +1,4 @@
-# Delivera Express Canliya Alma
+# RESTOMAP Canliya Alma
 
 ## 1. Sunucu Hazirligi
 

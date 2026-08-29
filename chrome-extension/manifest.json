@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Delivera Express Quick Push",
+  "name": "RESTOMAP Quick Push",
   "version": "1.0.0",
-  "description": "Platform panelinden siparis metnini Delivera Express'e gonderir.",
+  "description": "Platform panelinden siparis metnini RESTOMAP'e gonderir.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -37,7 +37,7 @@
     }
   ],
   "action": {
-    "default_title": "Delivera Express",
+    "default_title": "RESTOMAP",
     "default_popup": "popup.html"
   }
 }

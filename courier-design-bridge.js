@@ -3,7 +3,14 @@
 
   const TOKEN_KEY = "kuryeTakipCourierToken";
   const REFRESH_KEY = "kuryeTakipCourierRefreshToken";
-  const ASSIGNMENT_SIGNAL_KEY = "deliveraCourierAssignmentSignals";
+  const ASSIGNMENT_SIGNAL_KEY = (() => {
+    const currentKey = "restomapCourierAssignmentSignals";
+    const legacyKey = "deliveraCourierAssignmentSignals";
+    if (localStorage.getItem(currentKey) === null && localStorage.getItem(legacyKey) !== null) {
+      localStorage.setItem(currentKey, localStorage.getItem(legacyKey));
+    }
+    return currentKey;
+  })();
   const ASSIGNMENT_SIGNAL_TTL_MS = 30 * 60 * 1000;
   const ASSIGNMENT_REMINDER_MS = 45 * 1000;
   const MAX_ASSIGNMENT_SIGNALS = 2;
@@ -247,7 +254,7 @@
     let visible = false;
     assignmentTitleTimer = window.setInterval(() => { visible = !visible; document.title = visible ? "🔔 YENİ PAKETİ KABUL ET" : originalDocumentTitle; }, 850);
     if (!pushInitialized && notificationPermission() === "granted") {
-      navigator.serviceWorker?.getRegistration("/").then((registration) => registration?.showNotification("Delivera Express - Yeni Paket", {
+      navigator.serviceWorker?.getRegistration("/").then((registration) => registration?.showNotification("RESTOMAP - Yeni Paket", {
         body: `${pkg.restaurantName || "Restoran"} - ${pkg.deliveryAddress || pkg.address || "Paket detayını açın"}`,
         tag: `delivera-package-${pkg.id}`,
         renotify: true,
@@ -327,7 +334,7 @@
       revealCourierApp();
       return;
     }
-    window.DeliveraLoginShell.show({
+    window.RestomapLoginShell.show({
       title: "Kurye Girişi",
       description: "Vardiyana başlamak için giriş yap.",
       fields: `<label class="delivera-auth-field full"><span>Kullanıcı adı</span><input name="username" autocomplete="username" required></label><label class="delivera-auth-field full"><span>Şifre</span><input name="password" type="password" autocomplete="current-password" required></label>`,
@@ -335,7 +342,7 @@
         const permissionRequest = requestCourierNotificationPermission();
         const result = await api("/api/courier/login", { method: "POST", body: JSON.stringify({ username: form.get("username"), password: form.get("password") }) });
         saveAuth(result);
-        window.DeliveraLoginShell.hide();
+        window.RestomapLoginShell.hide();
         await loadWorkspace();
         await permissionRequest;
         await initializeCourierPush();

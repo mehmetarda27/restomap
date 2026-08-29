@@ -5,8 +5,16 @@ const SVG_MOTO = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" st
 const SVG_PIN = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: text-bottom; margin-right: 4px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>`;
 const SVG_COURIER = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: text-bottom; margin-right: 4px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>`;
 
-const ADMIN_TOKEN_KEY = "deliveraAdminToken";
-const ADMIN_REFRESH_TOKEN_KEY = "deliveraAdminRefreshToken";
+function migratedStorageKey(currentKey, legacyKey) {
+  if (localStorage.getItem(currentKey) === null && localStorage.getItem(legacyKey) !== null) {
+    localStorage.setItem(currentKey, localStorage.getItem(legacyKey));
+  }
+  return currentKey;
+}
+
+const ADMIN_TOKEN_KEY = migratedStorageKey("restomapAdminToken", "deliveraAdminToken");
+const ADMIN_REFRESH_TOKEN_KEY = migratedStorageKey("restomapAdminRefreshToken", "deliveraAdminRefreshToken");
+const ADMIN_LEGACY_AUTH_KEYS = ["deliveraAdminToken", "deliveraAdminRefreshToken"];
 const ADMIN_REFRESH_MS = 20_000;
 const ADMIN_MANUAL_MAX_ACTIVE_PACKAGES = 4;
 const ADMIN_COURIER_ISSUE_LABELS = {
@@ -168,8 +176,8 @@ function writeStoredAdminAuth() {
 
 function clearStoredAdminAuth() {
   try {
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
-    localStorage.removeItem(ADMIN_REFRESH_TOKEN_KEY);
+    [ADMIN_TOKEN_KEY, ADMIN_REFRESH_TOKEN_KEY, ...ADMIN_LEGACY_AUTH_KEYS]
+      .forEach((key) => localStorage.removeItem(key));
   } catch {}
 }
 
@@ -1066,7 +1074,7 @@ function openPackagePrintWindow(pkg) {
         </style>
       </head>
       <body>
-        <h1>${htmlSafe(pkg.restaurantName || "Delivera Express")}</h1>
+        <h1>${htmlSafe(pkg.restaurantName || "RESTOMAP")}</h1>
         <p>Platform: ${htmlSafe(pkg.sourcePlatform || "-")}</p>
         <p style="display: flex; align-items: center; gap: 4px;">${SVG_PACKAGE} Siparis No: ${htmlSafe(pkg.externalOrderNo || pkg.trackingNo || "-")}</p>
         <p>Musteri: ${htmlSafe(pkg.recipient || "-")}</p>

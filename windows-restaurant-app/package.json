@@ -1,7 +1,7 @@
 {
   "name": "delivera-restaurant-windows",
   "version": "1.1.0",
-  "description": "Delivera Express restoran Windows uygulaması",
+  "description": "RESTOMAP restoran Windows uygulaması",
   "main": "main.js",
   "private": true,
   "scripts": {

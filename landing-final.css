@@ -43,11 +43,7 @@ a {
   min-height: 100vh;
   flex-direction: column;
   overflow: hidden;
-  background-image:
-    linear-gradient(180deg, rgba(8, 4, 2, .2), rgba(8, 4, 2, .38)),
-    url('/assets/delivera-login.jpg');
-  background-position: center;
-  background-size: cover;
+  background: #f7f8fa;
 }
 
 .landing-page::before {
@@ -82,8 +78,21 @@ a {
 
 .landing-brand {
   display: inline-flex;
+  width: 280px;
+  height: 56px;
   align-items: center;
-  gap: 13px;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.restomap-header-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-image: url('/assets/restomap-kurye-takip.jpg?v=2');
+  background-position: center 51%;
+  background-repeat: no-repeat;
+  background-size: 130% auto;
 }
 
 .landing-brand img {
@@ -157,6 +166,20 @@ a {
   align-items: center;
   justify-content: center;
   padding: clamp(38px, 6vh, 70px) clamp(24px, 3.2vw, 56px);
+}
+
+.landing-main-visual {
+  background-image: url('/assets/restomap-kurye-takip.jpg?v=1');
+  background-position: center;
+  background-size: cover;
+}
+
+.landing-main-visual .landing-hero {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 106, 0, .08), transparent 35%),
+    rgba(10, 7, 5, .48);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .landing-hero {
@@ -367,7 +390,12 @@ a {
   }
 
   .landing-brand {
-    gap: 9px;
+    width: 190px;
+    height: 44px;
+  }
+
+  .restomap-header-logo {
+    background-size: 135% auto;
   }
 
   .landing-brand img {
@@ -401,6 +429,10 @@ a {
 
   .landing-main {
     padding: 22px 14px;
+  }
+
+  .landing-main-visual {
+    background-size: cover;
   }
 
   .landing-hero {

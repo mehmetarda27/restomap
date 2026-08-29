@@ -10,7 +10,7 @@ const args = Object.fromEntries(process.argv.slice(2).map((entry) => {
   return [key, value.join("=")];
 }));
 
-const targetPath = path.resolve(args.target || process.env.DB_PATH || "delivera.sqlite");
+const targetPath = path.resolve(args.target || process.env.DB_PATH || "restomap.sqlite");
 const pruneRequested = /^(?:1|true|yes)$/i.test(String(args.prune || ""));
 const sourceUrl = args["source-file"]
   ? fs.readFileSync(path.resolve(args["source-file"]), "utf8").trim()

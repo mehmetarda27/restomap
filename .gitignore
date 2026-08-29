@@ -34,3 +34,7 @@ android/app/google-services.json
 
 dist/
 coverage/
+windows-restaurant-app/dist/
+output/
+*.apk
+*.aab

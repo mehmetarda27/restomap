@@ -1,4 +1,4 @@
-# Delivera Express
+# RESTOMAP
 
 Mersin icin restoran, kurye ve admin operasyonunu tek omurgada toplayan multi-restaurant paket yonetim sistemi. Sistem tenant izolasyonuyla calisir; restoran sadece kendi verisini gorur, admin tum operasyonu merkezi olarak yonetir.
 

@@ -14,7 +14,7 @@
       .delivera-auth-title{position:relative;align-self:start;justify-self:center;margin:0;padding:16px 24px 18px;text-align:center;color:#fff;font-size:clamp(25px,3.2vw,36px);font-weight:800;line-height:1.15;letter-spacing:-.02em}
       .delivera-auth-title:after{content:"";position:absolute;left:50%;bottom:4px;width:54px;height:4px;border-radius:999px;background:#ff6900;transform:translateX(-50%);box-shadow:0 0 18px rgba(255,105,0,.5)}
       .delivera-auth-brand{align-self:center;justify-self:center;width:min(46vh,520px);max-width:72vw;aspect-ratio:1;min-width:230px;min-height:230px;padding:7px;border:1px solid rgba(255,120,35,.22);border-radius:30px;background:rgba(255,255,255,.025);box-shadow:0 24px 70px rgba(0,0,0,.36)}
-      .delivera-auth-brand img{display:block;width:100%;height:100%;border-radius:24px;object-fit:contain;background:#110d09}
+      .delivera-auth-brand img{display:block;width:100%;height:100%;border-radius:24px;object-fit:contain;background:#fff}
       .delivera-auth-panel{box-sizing:border-box;align-self:end;width:min(100%,740px);margin:0 auto;padding:20px 22px 22px;border:1px solid rgba(255,255,255,.1);border-top-color:rgba(255,123,40,.48);border-radius:18px;background:rgba(24,24,26,.96);box-shadow:0 18px 55px rgba(0,0,0,.42)}
       .delivera-auth-description{margin:0 0 15px;color:#c9c3be;font-size:13px;text-align:center}
       .delivera-auth-form{display:grid;gap:13px}
@@ -45,7 +45,7 @@
     root.className = "delivera-auth-shell delivera-login";
     root.innerHTML = `<main class="delivera-auth-stage" aria-labelledby="deliveraAuthTitle">
       <h1 id="deliveraAuthTitle" class="delivera-auth-title"></h1>
-      <div class="delivera-auth-brand"><img src="/assets/delivera-login.jpg" alt="Delivera Express"></div>
+      <div class="delivera-auth-brand"><img src="/assets/restomap-package-logo.png?v=1" alt="RESTOMAP Tamamı Paket Takip Sistemi"></div>
       <section class="delivera-auth-panel">
         <p class="delivera-auth-description"></p>
         <form class="delivera-auth-form">
@@ -80,5 +80,6 @@
     return root;
   }
 
-  window.DeliveraLoginShell = { show, hide };
+  window.RestomapLoginShell = { show, hide };
+  window.DeliveraLoginShell = window.RestomapLoginShell;
 })();

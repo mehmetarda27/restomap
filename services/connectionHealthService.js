@@ -218,7 +218,8 @@ function createConnectionHealthService(deps = {}) {
         method: options.method || "GET",
         signal: controller.signal,
         headers: {
-          "User-Agent": "DeliveraExpress-HealthCheck",
+          "User-Agent": "RESTOMAP-HealthCheck",
+          "X-Restomap-Platform": account.platform || "",
           "X-Delivera-Platform": account.platform || "",
           ...(account.apiKey ? { "X-API-Key": account.apiKey } : {}),
           ...(account.apiSecret ? { "X-API-Secret": account.apiSecret } : {}),

@@ -5,12 +5,25 @@ const SVG_MOTO = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" st
 const SVG_PIN = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: text-bottom; margin-right: 4px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>`;
 const SVG_COURIER = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: text-bottom; margin-right: 4px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>`;
 
-const RESTAURANT_TOKEN_KEY = "deliveraRestaurantToken";
-const RESTAURANT_REFRESH_TOKEN_KEY = "deliveraRestaurantRefreshToken";
-const RESTAURANT_ID_KEY = "deliveraRestaurantId";
-const RESTAURANT_API_KEY_KEY = "deliveraRestaurantApiKey";
-const RESTAURANT_AUTO_PRINT_KEY = "deliveraRestaurantAutoPrintByRestaurant";
-const RESTAURANT_PRINTED_PACKAGES_KEY = "deliveraRestaurantPrintedPackages";
+function migratedStorageKey(currentKey, legacyKey) {
+  if (localStorage.getItem(currentKey) === null && localStorage.getItem(legacyKey) !== null) {
+    localStorage.setItem(currentKey, localStorage.getItem(legacyKey));
+  }
+  return currentKey;
+}
+
+const RESTAURANT_TOKEN_KEY = migratedStorageKey("restomapRestaurantToken", "deliveraRestaurantToken");
+const RESTAURANT_REFRESH_TOKEN_KEY = migratedStorageKey("restomapRestaurantRefreshToken", "deliveraRestaurantRefreshToken");
+const RESTAURANT_ID_KEY = migratedStorageKey("restomapRestaurantId", "deliveraRestaurantId");
+const RESTAURANT_API_KEY_KEY = migratedStorageKey("restomapRestaurantApiKey", "deliveraRestaurantApiKey");
+const RESTAURANT_LEGACY_AUTH_KEYS = [
+  "deliveraRestaurantToken",
+  "deliveraRestaurantRefreshToken",
+  "deliveraRestaurantId",
+  "deliveraRestaurantApiKey",
+];
+const RESTAURANT_AUTO_PRINT_KEY = migratedStorageKey("restomapRestaurantAutoPrintByRestaurant", "deliveraRestaurantAutoPrintByRestaurant");
+const RESTAURANT_PRINTED_PACKAGES_KEY = migratedStorageKey("restomapRestaurantPrintedPackages", "deliveraRestaurantPrintedPackages");
 const RESTAURANT_PRINTED_PACKAGE_LIMIT = 250;
 const RESTAURANT_WORKSPACE_REFRESH_MS = 12_000;
 
@@ -331,8 +344,13 @@ function writeStoredRestaurantAccessInfo() {
 
 function clearStoredRestaurantAuth() {
   try {
-    localStorage.removeItem(RESTAURANT_TOKEN_KEY);
-    localStorage.removeItem(RESTAURANT_REFRESH_TOKEN_KEY);
+    [
+      RESTAURANT_TOKEN_KEY,
+      RESTAURANT_REFRESH_TOKEN_KEY,
+      RESTAURANT_ID_KEY,
+      RESTAURANT_API_KEY_KEY,
+      ...RESTAURANT_LEGACY_AUTH_KEYS,
+    ].forEach((key) => localStorage.removeItem(key));
   } catch {}
 }
 
@@ -1056,7 +1074,7 @@ function thermalReceiptItemsHtml(pkg) {
   }).join("");
 }
 
-function buildThermalReceiptHtml(pkg, restaurantName = "Delivera Express") {
+function buildThermalReceiptHtml(pkg, restaurantName = "RESTOMAP") {
   const orderCode = pkg.externalOrderNo || pkg.platformOrderId || pkg.trackingNo || pkg.id || "Sipariş";
   const trackingCode = pkg.trackingNo || pkg.id || "-";
   const note = pkg.customerNote || pkg.note || "-";
@@ -1109,12 +1127,12 @@ function buildThermalReceiptHtml(pkg, restaurantName = "Delivera Express") {
     <div class="row total"><span>TOPLAM</span><strong>${escapeHtml(formatCurrency(pkg.orderAmount || 0))}</strong></div>
     <div class="divider"></div>
     <div class="block"><span class="label">Müşteri Notu</span>${escapeHtml(note)}</div>
-    <div class="footer">Delivera Express · 58 mm restoran fişi</div>
+    <div class="footer">RESTOMAP · 58 mm restoran fişi</div>
   </body>
 </html>`;
 }
 
-function printThermalReceiptInFrame(pkg, restaurantName = "Delivera Express") {
+function printThermalReceiptInFrame(pkg, restaurantName = "RESTOMAP") {
   const frame = document.createElement("iframe");
   frame.setAttribute("title", "58 mm sipariş fişi");
   frame.setAttribute("aria-hidden", "true");
@@ -1146,7 +1164,7 @@ function printThermalReceiptInFrame(pkg, restaurantName = "Delivera Express") {
   return true;
 }
 
-function openPackagePrintWindow(pkg, restaurantName = "Delivera Express") {
+function openPackagePrintWindow(pkg, restaurantName = "RESTOMAP") {
   let win = null;
   try {
     win = window.open("", "_blank", "width=390,height=760");
@@ -1181,7 +1199,7 @@ function flushAutomaticPackagePrintQueue() {
     return 0;
   }
   const restaurantId = restaurantState.selectedRestaurantId || restaurantState.data.restaurants?.[0]?.id || "";
-  const restaurantName = restaurantState.data.restaurants?.[0]?.name || "Delivera Express";
+  const restaurantName = restaurantState.data.restaurants?.[0]?.name || "RESTOMAP";
   let printedCount = 0;
   [...restaurantState.pendingAutoPrintKeys].forEach((printKey) => {
     const pkg = (restaurantState.data.packages || []).find((item) =>
@@ -1884,7 +1902,7 @@ function renderRecentOrders(packages) {
     quickPrintButton.textContent = "58 mm Fiş Yazdır";
     quickPrintButton.setAttribute("aria-label", `${packageDisplayCode(pkg)} 58 mm fiş yazdır`);
     quickPrintButton.addEventListener("click", () => {
-      openPackagePrintWindow(pkg, restaurantState.data?.restaurants?.[0]?.name || "Delivera Express");
+      openPackagePrintWindow(pkg, restaurantState.data?.restaurants?.[0]?.name || "RESTOMAP");
     });
     card.querySelector(".order-card-footer")?.appendChild(quickPrintButton);
     restaurantRefs.recentOrders.appendChild(card);
@@ -1895,7 +1913,7 @@ function renderActiveOrders(data) {
   const packageList = activeOrderPackages(data.packages || [])
     .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
   const courierById = courierMap(data);
-  const restaurantName = data.restaurants?.[0]?.name || "Delivera Express";
+  const restaurantName = data.restaurants?.[0]?.name || "RESTOMAP";
   const signature = [
     restaurantName,
     listRenderSignature(packageList, ["id", "trackingNo", "externalOrderNo", "status", "assignedCourierId", "assignedCourierName", "paymentStatus", "lastAssignmentError", "updatedAt"]),
@@ -2145,7 +2163,7 @@ function renderOrderHistory(packages) {
     reprintButton.textContent = "Fişi Tekrar Yazdır";
     reprintButton.setAttribute("aria-label", `${packageDisplayCode(pkg)} fişi tekrar yazdır`);
     reprintButton.addEventListener("click", () => {
-      openPackagePrintWindow(pkg, restaurantState.data?.restaurants?.[0]?.name || "Delivera Express");
+      openPackagePrintWindow(pkg, restaurantState.data?.restaurants?.[0]?.name || "RESTOMAP");
     });
     card.querySelector(".order-card-footer")?.appendChild(reprintButton);
     restaurantRefs.orderHistory.appendChild(card);

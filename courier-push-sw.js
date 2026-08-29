@@ -11,7 +11,7 @@ self.addEventListener("push", (event) => {
     payload = { body: event.data?.text?.() || "Yeni paket atandi." };
   }
 
-  const title = payload.title || "Delivera Express - Yeni Paket";
+  const title = payload.title || "RESTOMAP - Yeni Paket";
   const options = {
     body: payload.body || "Yeni bir paketiniz var.",
     tag: payload.tag || "delivera-new-package",

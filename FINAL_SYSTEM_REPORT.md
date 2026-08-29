@@ -1,11 +1,11 @@
-# Delivera Express - Final Sistem Teknik Raporu
+# RESTOMAP - Final Sistem Teknik Raporu
 
 Rapor tarihi: 14 Mayis 2026  
 Kapsam: Mevcut kod tabani, son production hazirliklari, guvenli dogrulama komutlari, test sonuclari ve kalan riskler.
 
 ## 1. Genel Sistem Özeti
 
-Delivera Express; restoran, kurye ve admin operasyonlarini tek panel uzerinden yonetmek icin gelistirilmis paket takip ve teslimat operasyon sistemidir. Temel problem, restoranlardan gelen siparislerin kontrollu sekilde alinmasi, onaylanmasi, uygun kuryeye atanmasi, teslim surecinin izlenmesi ve operasyon gecmisinin raporlanmasidir.
+RESTOMAP; restoran, kurye ve admin operasyonlarini tek panel uzerinden yonetmek icin gelistirilmis paket takip ve teslimat operasyon sistemidir. Temel problem, restoranlardan gelen siparislerin kontrollu sekilde alinmasi, onaylanmasi, uygun kuryeye atanmasi, teslim surecinin izlenmesi ve operasyon gecmisinin raporlanmasidir.
 
 Sistemin ana kullanicilari:
 
@@ -311,7 +311,7 @@ Gercek musteri kullanimi: Kucuk/orta operasyon icin uygun. Yuksek concurrency, c
 
 ### Sonuç
 
-Delivera Express mevcut haliyle **Early Production** seviyesindedir. Demo/pilot goruntusunden cikarilmis, gercek restoran/kurye/siparis operasyonu icin temel akislar hazirlanmistir. Ancak enterprise olcek icin PostgreSQL, Redis, BullMQ worker, gercek provider signature entegrasyonlari ve merkezi observability tamamlanmalidir.
+RESTOMAP mevcut haliyle **Early Production** seviyesindedir. Demo/pilot goruntusunden cikarilmis, gercek restoran/kurye/siparis operasyonu icin temel akislar hazirlanmistir. Ancak enterprise olcek icin PostgreSQL, Redis, BullMQ worker, gercek provider signature entegrasyonlari ve merkezi observability tamamlanmalidir.
 
 ### Kullanılabilirlik
 

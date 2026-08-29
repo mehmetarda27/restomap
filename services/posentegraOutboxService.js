@@ -370,7 +370,7 @@ function createPosentegraOutboxService({ db, client, logger, maxAttempts = 10 } 
 
       if (cancelledLocally) {
         if (beforeCode !== 1600) {
-          const cancellationNote = trimmed(packageRow.failure_reason) || "Delivera operasyonu tarafindan iptal edildi.";
+          const cancellationNote = trimmed(packageRow.failure_reason) || "RESTOMAP operasyonu tarafından iptal edildi.";
           await client.cancelOrder(
             orderId,
             "TECHNICAL_PROBLEM",

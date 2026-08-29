@@ -15,6 +15,7 @@ try {
     }
   } catch {}
 }
+require("./services/envCompatibility").applyBrandEnvCompatibility();
 const managedRuntime = [
   process.env.RENDER,
   process.env.RENDER_SERVICE_ID,
@@ -343,6 +344,7 @@ const STATIC_FILES = {
   "/courier-design-bridge.js": "courier-design-bridge.js",
   "/restaurant-design-bridge.js": "restaurant-design-bridge.js",
   "/admin-design-bridge.js": "admin-design-bridge.js",
+  "/downloads/restomap-restoran-kurulum.cmd": "restomap-restoran-kurulum.cmd",
   "/downloads/delivera-restoran-kurulum.cmd": "delivera-restoran-kurulum.cmd",
   "/vendor/leaflet.js": "node_modules/leaflet/dist/leaflet.js",
   "/vendor/leaflet.css": "node_modules/leaflet/dist/leaflet.css",
@@ -4011,7 +4013,7 @@ function deleteRestaurantPushSubscription(restaurantId, endpoint) {
 function courierPushPayload(event) {
   const pkg = event.packageId ? getPackageById(event.packageId) : null;
   const trackingNo = pkg?.trackingNo || pkg?.externalOrderNo || event.packageId || "Yeni paket";
-  const restaurantName = pkg?.restaurantName || "Delivera Express";
+  const restaurantName = pkg?.restaurantName || "RESTOMAP";
   const address = pkg?.deliveryAddress || pkg?.address || pkg?.customerAddress || "Paket detaylarini acmak icin dokunun.";
   const packageId = pkg?.id || event.packageId || "";
   return {
@@ -4087,7 +4089,7 @@ function restaurantPushPayload(event) {
   const pkg = packageId ? getPackageById(packageId) : null;
   if (event.type === "restaurant-push-test") {
     return {
-      title: "Delivera Bildirim Testi",
+      title: "RESTOMAP Bildirim Testi",
       body: "Bildirimler acik. Yeni siparisler bu cihaza bildirilecek.",
       packageId: "",
       tag: `delivera-restaurant-test-${event.restaurantId}`,
@@ -4095,7 +4097,7 @@ function restaurantPushPayload(event) {
     };
   }
   const trackingNo = pkg?.trackingNo || pkg?.externalOrderNo || packageId || "Yeni siparis";
-  const platform = pkg?.sourcePlatform || event.platform || "Delivera";
+  const platform = pkg?.sourcePlatform || event.platform || "RESTOMAP";
   const customer = pkg?.recipient || event.customerName || "Yeni musteri siparisi";
   return {
     title: `Yeni Siparis - ${trackingNo}`,
@@ -4290,7 +4292,7 @@ function sendFile(res, fileName) {
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   if (ext === ".cmd") {
-    res.setHeader("Content-Disposition", 'attachment; filename="delivera-restoran-kurulum.cmd"');
+    res.setHeader("Content-Disposition", `attachment; filename="${path.basename(filePath)}"`);
     res.setHeader("X-Content-Type-Options", "nosniff");
   }
   res.writeHead(200, { "Content-Type": ext === ".cmd" ? "application/octet-stream" : (typeMap[ext] || "text/plain; charset=utf-8") });
@@ -4474,7 +4476,7 @@ function systemStatusPayload() {
 
   return {
     ok: true,
-    app: "Delivera Express",
+    app: "RESTOMAP",
     env: NODE_ENV,
     uptimeSeconds: Math.round(process.uptime()),
     database: {
@@ -5603,7 +5605,7 @@ function readinessPayload() {
   const dbEnv = dbFacade.databaseEnvInfo();
   return {
     ok: issues.length === 0,
-    app: "Delivera Express",
+    app: "RESTOMAP",
     database: {
       ok: databaseOk,
       mode: databaseMode,
@@ -5795,7 +5797,7 @@ async function geocodeDeliveryAddress(address) {
       signal: controller.signal,
       headers: {
         Accept: "application/json",
-        "User-Agent": trimmed(process.env.GEOCODING_USER_AGENT) || "Delivera/1.0 (delivery address preview)",
+        "User-Agent": trimmed(process.env.GEOCODING_USER_AGENT) || "RESTOMAP/1.0 (delivery address preview)",
       },
     });
     if (!response.ok) return null;
@@ -8610,7 +8612,7 @@ async function createRestaurantInPosentegraOrRollback(restaurant, requestId) {
       }
     }
     // Posentegra is an optional integration. A remote create/link failure must
-    // not roll back the Delivera restaurant account; the operator can match it
+    // not roll back the RESTOMAP restaurant account; the operator can match it
     // later from the unmatched-orders/integration screens.
     logger.warn("restaurant_created_without_posentegra_connection", {
       request_id: requestId,
@@ -10281,7 +10283,7 @@ async function verifyTrendyolMerchantCredentials(draft) {
       method: "GET",
       headers: {
         Authorization: `Basic ${authValue}`,
-        "User-Agent": `${sellerId} - DeliveraExpress`,
+        "User-Agent": `${sellerId} - RESTOMAP`,
         ...(draft.storeFrontCode ? { storeFrontCode: draft.storeFrontCode } : {}),
       },
       signal: controller.signal,
@@ -11679,7 +11681,7 @@ if (!existingAdmin) {
 
   fs.writeFileSync(
     ADMIN_BOOTSTRAP_FILE,
-    `Delivera Express ilk admin hesabi olusturuldu.\nKullanici adi: ${defaultAdminUsername}\nSifre: ${defaultAdminPassword}\n`,
+    `RESTOMAP ilk admin hesabi olusturuldu.\nKullanici adi: ${defaultAdminUsername}\nSifre: ${defaultAdminPassword}\n`,
     "utf8"
   );
 }
@@ -17186,7 +17188,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && pathname === "/health") {
       sendJson(res, 200, {
         ok: true,
-        app: "Delivera Express",
+        app: "RESTOMAP",
         timestamp: nowIso(),
       });
       return;
@@ -17544,7 +17546,7 @@ const operationsSupervisor = createOperationsSupervisor({
 operationsSupervisor.start();
 
 server.listen(PORT, () => {
-  logger.info("Delivera Express ready", { url: `http://localhost:${PORT}`, port: PORT });
+  logger.info("RESTOMAP ready", { url: `http://localhost:${PORT}`, port: PORT });
 });
 
 let shuttingDown = false;

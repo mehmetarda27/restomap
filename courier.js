@@ -758,7 +758,7 @@ function notifyNewAssignment(pkg) {
   }
 
   try {
-    new Notification("Delivera Express - Yeni Paket", {
+    new Notification("RESTOMAP - Yeni Paket", {
       body: `${pkg.restaurantName} - ${pkg.deliveryAddress || pkg.address}`,
       tag: `delivera-package-${pkg.id}`,
     });

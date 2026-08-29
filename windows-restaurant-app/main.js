@@ -309,7 +309,7 @@ async function choosePrinter() {
 
 function printTestReceipt() {
   const now = new Date();
-  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><style>body{font:14px Arial;text-align:center}h1{font-size:20px;border-bottom:2px dashed #000;padding-bottom:8px}p{margin:8px 0}</style></head><body><h1>DELIVERA EXPRESS</h1><p><b>YAZICI TESTİ BAŞARILI</b></p><p>${now.toLocaleString("tr-TR")}</p><p>Otomatik fiş sistemi hazır.</p></body></html>`;
+  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><style>body{font:14px Arial;text-align:center}h1{font-size:20px;border-bottom:2px dashed #000;padding-bottom:8px}p{margin:8px 0}</style></head><body><h1>RESTOMAP</h1><p><b>YAZICI TESTİ BAŞARILI</b></p><p>${now.toLocaleString("tr-TR")}</p><p>Otomatik fiş sistemi hazır.</p></body></html>`;
   silentPrint({ packageId: `printer-test-${Date.now()}`, trackingNo: "TEST FİŞİ", html })
     .then((result) => notify("Test fişi gönderildi", `${result.printer || "Seçili yazıcı"} baskı işini kabul etti.`))
     .catch((error) => notify("Test fişi başarısız", error.message));

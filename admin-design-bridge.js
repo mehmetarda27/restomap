@@ -1,8 +1,16 @@
 (() => {
   "use strict";
 
-  const TOKEN_KEY = "deliveraAdminToken";
-  const REFRESH_KEY = "deliveraAdminRefreshToken";
+  function migratedStorageKey(currentKey, legacyKey) {
+    if (localStorage.getItem(currentKey) === null && localStorage.getItem(legacyKey) !== null) {
+      localStorage.setItem(currentKey, localStorage.getItem(legacyKey));
+    }
+    return currentKey;
+  }
+
+  const TOKEN_KEY = migratedStorageKey("restomapAdminToken", "deliveraAdminToken");
+  const REFRESH_KEY = migratedStorageKey("restomapAdminRefreshToken", "deliveraAdminRefreshToken");
+  const LEGACY_AUTH_KEYS = ["deliveraAdminToken", "deliveraAdminRefreshToken"];
   const terminalStatuses = new Set(["delivered", "failed", "rejected", "cancelled", "canceled"]);
   const state = {
     token: localStorage.getItem(TOKEN_KEY) || "",
@@ -86,13 +94,13 @@
   function clearAuth() {
     state.token = "";
     state.refreshToken = "";
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
+    [TOKEN_KEY, REFRESH_KEY, ...LEGACY_AUTH_KEYS]
+      .forEach((key) => localStorage.removeItem(key));
     state.stream?.close();
   }
 
   function injectShell() {
-    document.title = "Admin Operasyon | Delivera Express";
+    document.title = "Admin Operasyon | RESTOMAP";
     const style = document.createElement("style");
     style.textContent = `
       .da-modal-root{position:fixed;inset:0;z-index:200;background:rgba(15,23,42,.58);display:flex;align-items:center;justify-content:center;padding:24px}.da-modal{width:min(780px,96vw);max-height:90vh;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 24px 80px rgba(15,23,42,.3)}.da-modal-head{position:sticky;top:0;z-index:2;background:#fff;display:flex;justify-content:space-between;align-items:center;padding:17px 20px;border-bottom:1px solid #e2e8f0}.da-modal-body{padding:20px}.da-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.da-field{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600}.da-field.full{grid-column:1/-1}.da-field input,.da-field select,.da-field textarea{border:1px solid #c7c4d7;border-radius:8px;padding:10px;background:#fff;font-size:14px}.da-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:9px;margin-top:5px}.da-primary,.da-secondary,.da-danger{border:0;border-radius:8px;padding:10px 15px;font-weight:700}.da-primary{background:#4343d5;color:#fff}.da-secondary{background:#e7eefe;color:#2f05ea}.da-danger{background:#fee2e2;color:#b91c1c}.da-toast{position:fixed;z-index:250;right:22px;bottom:22px;max-width:420px;padding:12px 16px;border-radius:10px;background:#151c27;color:#fff;box-shadow:0 14px 40px #0004}.da-toast.success{background:#047857}.da-toast.error{background:#b91c1c}.da-empty{padding:60px 20px;text-align:center;color:#767586}.da-list{display:grid;gap:10px}.da-list-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px;border:1px solid #e2e8f0;border-radius:10px}.da-list-row small{display:block;color:#64748b;margin-top:3px}.da-list-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.da-list-actions button{padding:7px 10px;border-radius:7px;background:#e7eefe;color:#2f05ea;font-size:11px;font-weight:700}.da-notification{position:relative;width:40px;height:40px;border-radius:10px;background:#fff;color:#4343d5;display:grid;place-items:center;border:1px solid #c7c4d7;margin-left:auto}.da-notification-badge{position:absolute;right:-5px;top:-6px;background:#dc2626;color:#fff;min-width:18px;height:18px;border-radius:99px;padding:0 5px;font-size:10px;display:grid;place-items:center}.da-map{height:min(68vh,620px);border-radius:10px;overflow:hidden}.da-live{color:#047857;font-weight:700}.da-row{cursor:pointer}.da-row:hover .da-row-actions{opacity:1}.da-row-actions{opacity:.25;transition:opacity .15s}.da-badge{display:inline-flex;padding:3px 8px;border-radius:99px;font-size:10px;font-weight:700;background:#e7eefe;color:#4343d5}.da-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}.da-kpi>div{background:#f0f3ff;border-radius:10px;padding:13px}.da-kpi strong{display:block;font-size:22px;color:#4343d5}.da-kpi span{font-size:11px;color:#64748b}.da-route-title{font-size:20px;font-weight:700;margin-bottom:14px}.da-login .da-modal{width:min(460px,96vw)}.da-connection-offline{background:#ef4444!important}.da-main-scroll{overflow:auto!important}.da-table-head,.da-row{min-width:1120px}.da-active-route{background:#4b3bff!important;color:#fff!important;border-left:4px solid #4343d5!important}.da-logout{margin-top:8px;width:100%;padding:8px;border-radius:8px;background:#fee2e2;color:#b91c1c;font-size:12px;font-weight:700}.leaflet-container{font:12px Inter,sans-serif}
@@ -187,14 +195,14 @@
   }
 
   function showLogin(message = "Operasyon paneline giriş yapın.") {
-    window.DeliveraLoginShell.show({
+    window.RestomapLoginShell.show({
       title: "Operasyon Girişi",
       description: message.replace("Admin", "Operasyon"),
       fields: `<label class="delivera-auth-field full"><span>Kullanıcı adı</span><input name="username" autocomplete="username" required></label><label class="delivera-auth-field full"><span>Parola</span><input name="password" type="password" autocomplete="current-password" required></label>`,
       onSubmit: async (formData) => {
         const auth = await api("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(formData)) }, false);
         saveAuth(auth);
-        window.DeliveraLoginShell.hide();
+        window.RestomapLoginShell.hide();
         await load();
         connectStream();
         startPolling();
@@ -903,8 +911,8 @@
     if (route.includes("eşleşmeyen paket")) return showUnmatchedWorkspace().catch((error) => toast(error.message, "error"));
     if (route.includes("restoran cihaz kurulumu")) {
       const download = document.createElement("a");
-      download.href = "/downloads/delivera-restoran-kurulum.cmd";
-      download.download = "delivera-restoran-kurulum.cmd";
+      download.href = "/downloads/restomap-restoran-kurulum.cmd";
+      download.download = "restomap-restoran-kurulum.cmd";
       document.body.appendChild(download);
       download.click();
       download.remove();

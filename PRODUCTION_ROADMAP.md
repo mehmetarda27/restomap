@@ -1,4 +1,4 @@
-# Delivera Express Production Roadmap
+# RESTOMAP Production Roadmap
 
 Bu plan mevcut calisan SQLite runtime'i ve `.env` dosyalarini bozmadan production seviyesine gecis icindir. Kritik kural: her buyuk adimdan sonra `npm install`, `npm run build`, `node smoke-test.js` ve kontrollu `node server.js` calistirilir.
 

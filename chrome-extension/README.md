@@ -1,4 +1,4 @@
-# Delivera Express Chrome Extension
+# RESTOMAP Chrome Extension
 
 ## Kurulum
 

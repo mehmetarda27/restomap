@@ -200,7 +200,7 @@ async function run() {
     const adminHeaders = { Authorization: `Bearer ${adminLogin.token}` };
 
     const health = await request("/health");
-    if (!health.ok || health.app !== "Delivera Express" || health.database || health.queues || health.cache) {
+    if (!health.ok || health.app !== "RESTOMAP" || health.database || health.queues || health.cache) {
       throw new Error("Public health endpoint guvenli minimal payload dondurmedi.");
     }
     const metrics = await requestText("/metrics");
