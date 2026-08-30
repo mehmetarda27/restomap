@@ -5836,7 +5836,7 @@ async function geocodeDeliveryAddress(address, proximity = null) {
         proximityLongitude + longitudeWindow,
         proximityLatitude - latitudeWindow,
       ].join(","));
-      url.searchParams.set("bounded", "0");
+      url.searchParams.set("bounded", "1");
     }
     url.searchParams.set("q", normalizedAddress);
     const response = await fetch(url, {
@@ -5848,9 +5848,15 @@ async function geocodeDeliveryAddress(address, proximity = null) {
     });
     if (!response.ok) return null;
     const results = await response.json();
-    const validResults = (Array.isArray(results) ? results : [])
+    let validResults = (Array.isArray(results) ? results : [])
       .map((item) => ({ latitude: Number(item?.lat), longitude: Number(item?.lon) }))
       .filter((item) => coordinatesAreValid(item.latitude, item.longitude));
+    if (hasProximity) {
+      const maximumDistanceKm = Math.max(1, Number(process.env.GEOCODING_MAX_DISTANCE_KM || 50));
+      validResults = validResults.filter((item) =>
+        distance(proximityLatitude, proximityLongitude, item.latitude, item.longitude) <= maximumDistanceKm
+      );
+    }
     const result = hasProximity
       ? validResults.sort((left, right) =>
         distance(proximityLatitude, proximityLongitude, left.latitude, left.longitude) -
@@ -8516,10 +8522,34 @@ function appendMissingAddressParts(baseAddress, parts) {
   return [result, ...missingParts].join(", ");
 }
 
+function normalizeDeliveryAddressForGeocoding(value) {
+  return trimmed(value)
+    .replace(/\s+/g, " ")
+    .replace(/\b(no|kat|daire|blok|apt)\s*[:.]?\s*(?=\d)/giu, "$1: ")
+    .replace(/\b(\d{4,6})\s*\.?\s*sokak\b/giu, "$1. Sokak")
+    .replace(/\s*,\s*/g, ", ")
+    .trim();
+}
+
+function deliveryAddressWithoutInteriorDetails(value) {
+  return normalizeDeliveryAddressForGeocoding(value)
+    .replace(/\b(?:kat|daire|blok|apt)\s*:\s*[\p{L}\d/-]+\b/giu, "")
+    .replace(/\s*,\s*,+/g, ", ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/[\s,]+$/g, "")
+    .trim();
+}
+
+function deliveryAddressLocality(value) {
+  const normalized = normalizeDeliveryAddressForGeocoding(value);
+  const neighborhood = normalized.match(/^(.+?\b(?:mahallesi|mah\.?))\b/iu)?.[1] || "";
+  return trimmed(neighborhood);
+}
+
 function packageDeliveryAddressCandidates(pkg) {
   const defaultCity = trimmed(process.env.RESTOMAP_DEFAULT_CITY || process.env.GEOCODING_DEFAULT_CITY) || "Mersin";
   const defaultCountry = trimmed(process.env.RESTOMAP_DEFAULT_COUNTRY || process.env.GEOCODING_DEFAULT_COUNTRY) || "Türkiye";
-  const address = trimmed(pkg.customer_address || pkg.delivery_address || pkg.address);
+  const address = normalizeDeliveryAddressForGeocoding(pkg.customer_address || pkg.delivery_address || pkg.address);
   const structuredAddress = [
     trimmed(pkg.street),
     trimmed(pkg.building_no) ? `No ${trimmed(pkg.building_no)}` : "",
@@ -8528,13 +8558,17 @@ function packageDeliveryAddressCandidates(pkg) {
   ].filter(Boolean).join(", ");
   const district = trimmed(pkg.district || pkg.zone);
   const city = trimmed(pkg.city) || defaultCity;
-  const bases = [structuredAddress, address].filter(Boolean);
+  const addressWithoutInteriorDetails = deliveryAddressWithoutInteriorDetails(address);
+  const locality = deliveryAddressLocality(address);
+  const bases = [structuredAddress, addressWithoutInteriorDetails, address].filter(Boolean);
   const candidates = [];
   for (const base of bases) {
     candidates.push(appendMissingAddressParts(base, [district, city, defaultCountry]));
     candidates.push(appendMissingAddressParts(base, [city, defaultCountry]));
-    candidates.push(appendMissingAddressParts(base, [district, defaultCountry]));
-    candidates.push(appendMissingAddressParts(base, [defaultCountry]));
+  }
+  if (locality) {
+    candidates.push(appendMissingAddressParts(locality, [district, city, defaultCountry]));
+    candidates.push(appendMissingAddressParts(locality, [city, defaultCountry]));
   }
   return candidates.filter(Boolean).filter((candidate, index, all) =>
     all.findIndex((item) => item.toLocaleLowerCase("tr-TR") === candidate.toLocaleLowerCase("tr-TR")) === index

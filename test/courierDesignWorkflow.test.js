@@ -45,9 +45,11 @@ test("courier design flow accepts, routes, delivers and records a break", { time
   const geocodeQueries = [];
   const geocoder = http.createServer((req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
-    geocodeQueries.push(url.searchParams.get("q"));
+    const query = url.searchParams.get("q");
+    geocodeQueries.push(query);
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify([{ lat: "36.8001", lon: "34.6202" }]));
+    const resolvesAtNeighborhood = /Sağlık Mahallesi/i.test(query) && !/86064/.test(query);
+    res.end(JSON.stringify(resolvesAtNeighborhood ? [{ lat: "36.8129837", lon: "34.6235738" }] : []));
   });
   await new Promise((resolve) => geocoder.listen(0, "127.0.0.1", resolve));
   const geocoderPort = geocoder.address().port;
@@ -76,7 +78,7 @@ test("courier design flow accepts, routes, delivers and records a break", { time
       payment_method, payment_status, order_amount, x, y, note, status, assignment_status, assigned_courier_id,
       assigned_courier_name, assigned_at, assignment_reason, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run("pkg_flow", "PKT-FLOW", "rst_flow", "restaurant_panel", "Manuel", "FLOW-1", "Akış Müşteri", "5550000000", "Test adresi", "Akdeniz", "15 dk", "Nakit", "cash_expected", 250, 36.79, 34.60, "", "assigned", "assigned", "cr_flow", "Akış Kurye", stamp, "Test ataması", stamp, stamp);
+      .run("pkg_flow", "PKT-FLOW", "rst_flow", "restaurant_panel", "Manuel", "FLOW-1", "Akış Müşteri", "5550000000", "sağlık mahallesi 86064 sokak no1 kat1 daire1", "Akdeniz", "15 dk", "Nakit", "cash_expected", 250, 36.79, 34.60, "", "assigned", "assigned", "cr_flow", "Akış Kurye", stamp, "Test ataması", stamp, stamp);
     db.close();
 
     let workspace = await request(baseUrl, "/api/courier/packages/pkg_flow/status", "token-flow", { method: "PATCH", body: JSON.stringify({ status: "accepted_by_courier" }) });
@@ -88,11 +90,13 @@ test("courier design flow accepts, routes, delivers and records a break", { time
     workspace = await request(baseUrl, "/api/courier/packages/pkg_flow/status", "token-flow", { method: "PATCH", body: JSON.stringify({ status: "on_route" }) });
     const routedPackage = workspace.packages.find((pkg) => pkg.id === "pkg_flow");
     assert.equal(routedPackage.status, "on_route");
-    assert.equal(routedPackage.customerLat, 36.8001);
-    assert.equal(routedPackage.customerLng, 34.6202);
-    assert.match(geocodeQueries[0], /Test adresi/i);
+    assert.equal(routedPackage.customerLat, 36.8129837);
+    assert.equal(routedPackage.customerLng, 34.6235738);
+    assert.match(geocodeQueries[0], /86064\. Sokak/i);
+    assert.match(geocodeQueries[0], /no: 1/i);
     assert.match(geocodeQueries[0], /Akdeniz/i);
     assert.match(geocodeQueries[0], /Mersin/i);
+    assert.ok(geocodeQueries.some((query) => /Sağlık Mahallesi/i.test(query) && !/86064/.test(query)));
 
     const prematureDayClose = await fetch(`${baseUrl}/api/courier/day-close`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer token-flow" }, body: "{}" });
     assert.equal(prematureDayClose.status, 409);
