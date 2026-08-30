@@ -5041,15 +5041,34 @@ function getCourierPackages(courierId, pagination = null) {
   return rows.map((row) => mapPackageRow(row, restaurantMap, platformOrderLookup(row)));
 }
 
-function getCourierPoolPackages(limit = 100) {
+function getCourierPoolPackages(courierId, limit = 100) {
+  const activeLoad = Number(db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM packages
+    WHERE assigned_courier_id = ?
+      AND status IN (?, ?, ?)
+  `).get(courierId, ASSIGNED_STATUS, ACCEPTED_BY_COURIER_STATUS, ON_ROUTE_STATUS)?.total || 0);
+  if (activeLoad < 1 || activeLoad >= COURIER_POOL_MAX_ACTIVE_PACKAGES) {
+    return [];
+  }
+
   const rows = db.prepare(`
     SELECT * FROM packages
     WHERE assigned_courier_id IS NULL
       AND status IN (?, ?, ?)
+      AND last_assignment_attempt_at IS NOT NULL
+      AND last_assignment_error IS NOT NULL
+      AND last_assignment_error <> ''
     ORDER BY datetime(created_at) ASC
     LIMIT ?
   `).all(PENDING_STATUS, PREPARING_STATUS, AWAITING_ASSIGNMENT_STATUS, clampLimit(limit));
-  return mapPackageRowsWithRestaurants(rows);
+  if (rows.length === 0) return [];
+  const state = {
+    restaurants: getRestaurants(),
+    couriers: getCouriers(),
+    packages: getPackages(),
+  };
+  return mapPackageRowsWithRestaurants(rows).filter((pkg) => isCourierPoolFallbackPackage(pkg, state));
 }
 
 function normalizePhone(value) {
@@ -5859,7 +5878,7 @@ function buildCourierWorkspace(courierId, options = {}) {
   const pagination = options.pagination || { limit: DEFAULT_PAGE_LIMIT, offset: 0 };
   const packages = getCourierPackages(courierId, pagination);
   const activeLoad = packages.filter((item) => isCapacityBlockingPackage(item)).length;
-  const poolPackages = getCourierPoolPackages(100);
+  const poolPackages = getCourierPoolPackages(courierId, 100);
   const historyPackages = getCourierHistoryPackages(courierId);
   const deliveredPackages = mapPackageRowsWithRestaurants(db.prepare(`
     SELECT * FROM packages
@@ -5879,7 +5898,9 @@ function buildCourierWorkspace(courierId, options = {}) {
     packages,
     poolPackages,
     poolCapacity: COURIER_POOL_MAX_ACTIVE_PACKAGES,
-    poolAvailableSlots: Math.max(0, COURIER_POOL_MAX_ACTIVE_PACKAGES - activeLoad),
+    poolAvailableSlots: activeLoad >= 1
+      ? Math.max(0, COURIER_POOL_MAX_ACTIVE_PACKAGES - activeLoad)
+      : 0,
     historyPackages,
     dayMetrics: {
       reportDate: dayKey(),
@@ -6887,6 +6908,24 @@ function withImmediateTransaction(work) {
   }
 }
 
+function isCourierPoolFallbackPackage(pkg, state = null) {
+  if (!pkg?.id || pkg.assignedCourierId || ![PENDING_STATUS, PREPARING_STATUS, AWAITING_ASSIGNMENT_STATUS].includes(normalizeStatus(pkg.status))) {
+    return false;
+  }
+  if (!pkg.lastAssignmentAttemptAt || !trimmed(pkg.lastAssignmentError)) {
+    return false;
+  }
+  if (packageRejectionCooldownRemainingMs(pkg.id) > 0) {
+    return false;
+  }
+  const assignmentState = state || {
+    restaurants: getRestaurants(),
+    couriers: getCouriers(),
+    packages: getPackages(),
+  };
+  return rankEligibleCouriers(assignmentState, pkg).length === 0;
+}
+
 function claimCourierPoolPackage(courierId, packageId) {
   const result = withImmediateTransaction(() => {
     const courier = db.prepare("SELECT * FROM couriers WHERE id = ?").get(courierId);
@@ -6906,6 +6945,9 @@ function claimCourierPoolPackage(courierId, packageId) {
     if (activeLoad >= COURIER_POOL_MAX_ACTIVE_PACKAGES) {
       throw httpError(409, `Kurye havuz kapasitesine ulasti (${COURIER_POOL_MAX_ACTIVE_PACKAGES} aktif paket).`);
     }
+    if (activeLoad < 1) {
+      throw httpError(409, "Bos kurye icin otomatik atama onceliklidir; havuz yalnizca ikinci paket senaryosunda kullanilir.");
+    }
 
     const target = db.prepare("SELECT * FROM packages WHERE id = ?").get(packageId);
     if (!target) throw httpError(404, "Havuz paketi bulunamadi.");
@@ -6914,12 +6956,20 @@ function claimCourierPoolPackage(courierId, packageId) {
       throw httpError(409, "Bu paket artik havuzda degil.");
     }
 
+    const mappedTarget = getPackageById(packageId);
+    if (!isCourierPoolFallbackPackage(mappedTarget)) {
+      throw httpError(409, "Paket otomatik atama sirasinda; uygun bos kurye onceliklidir.");
+    }
+
     const stamp = nowIso();
     const courierCoordinates = coordinatesAreValid(courier.x, courier.y) ? { latitude: Number(courier.x), longitude: Number(courier.y) } : null;
     const restaurantCoordinates = coordinatesAreValid(target.x, target.y) ? { latitude: Number(target.x), longitude: Number(target.y) } : null;
     const distanceKm = courierCoordinates && restaurantCoordinates
       ? Number(distance(courierCoordinates.latitude, courierCoordinates.longitude, restaurantCoordinates.latitude, restaurantCoordinates.longitude).toFixed(2))
       : null;
+    if (!Number.isFinite(distanceKm) || distanceKm > MAX_ASSIGNMENT_DISTANCE_KM) {
+      throw httpError(409, `Havuz paketi restoranin ${MAX_ASSIGNMENT_DISTANCE_KM} km hizmet siniri disinda.`);
+    }
     const update = db.prepare(`
       UPDATE packages
       SET status = ?, assignment_status = 'assigned', assigned_courier_id = ?, assigned_courier_name = ?,

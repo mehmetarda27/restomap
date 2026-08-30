@@ -35,7 +35,7 @@ async function courierRequest(baseUrl, pathname, token, options = {}) {
   return { response, body };
 }
 
-test("courier sees real unassigned pool packages and can atomically claim at most two", { timeout: 30000 }, async () => {
+test("automatic assignment stays primary and a busy courier can claim one overflow pool package", { timeout: 30000 }, async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "restomap-courier-pool-"));
   const dbFile = path.join(tempDir, "restomap.sqlite");
   const port = 46000 + Math.floor(Math.random() * 1000);
@@ -63,49 +63,68 @@ test("courier sees real unassigned pool packages and can atomically claim at mos
     const db = new DatabaseSync(dbFile);
     db.prepare("INSERT INTO restaurants (id, name, zone, x, y, platforms_json, api_key, webhook_secret, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .run("rst_pool", "Havuz Restoran", "Akdeniz", 36.79, 34.60, "[]", "pool-api", "pool-secret", stamp);
-    const insertCourier = db.prepare("INSERT INTO couriers (id, name, zone, x, y, available, status, username, password_hash, password_salt, per_package_fee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    insertCourier.run("cr_pool_1", "Havuz Kurye 1", "Akdeniz", 36.791, 34.601, 1, "online", "pool1", "unused", "unused", 40, stamp);
-    insertCourier.run("cr_pool_2", "Havuz Kurye 2", "Akdeniz", 36.792, 34.602, 1, "online", "pool2", "unused", "unused", 40, stamp);
+    const insertRestaurant = db.prepare("INSERT INTO restaurants (id, name, zone, x, y, platforms_json, api_key, webhook_secret, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    for (let index = 1; index <= 3; index += 1) {
+      insertRestaurant.run(`rst_active_${index}`, `Aktif Restoran ${index}`, "Akdeniz", 36.79, 34.60, "[]", `active-api-${index}`, `active-secret-${index}`, stamp);
+    }
+    const insertCourier = db.prepare("INSERT INTO couriers (id, name, zone, x, y, available, status, last_location_at, username, password_hash, password_salt, per_package_fee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    insertCourier.run("cr_pool_1", "Havuz Kurye 1", "Akdeniz", 36.791, 34.601, 1, "busy", stamp, "pool1", "unused", "unused", 40, stamp);
+    insertCourier.run("cr_pool_2", "Havuz Kurye 2", "Akdeniz", 36.792, 34.602, 1, "busy", stamp, "pool2", "unused", "unused", 40, stamp);
+    insertCourier.run("cr_pool_3", "Havuz Kurye 3", "Akdeniz", 36.793, 34.603, 1, "busy", stamp, "pool3", "unused", "unused", 40, stamp);
     db.prepare("INSERT INTO courier_sessions (token, courier_id, created_at) VALUES (?, ?, ?)").run("token-pool-1", "cr_pool_1", stamp);
     db.prepare("INSERT INTO courier_sessions (token, courier_id, created_at) VALUES (?, ?, ?)").run("token-pool-2", "cr_pool_2", stamp);
     const insertPackage = db.prepare(`INSERT INTO packages (
       id, tracking_no, restaurant_id, source, source_platform, external_order_no, recipient, phone, address, zone, eta,
       payment_method, payment_status, order_amount, x, y, customer_lat, customer_lng, note, status, assignment_status,
-      assignment_reason, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      assigned_courier_id, assigned_courier_name, assigned_at, accepted_at, assignment_reason,
+      last_assignment_attempt_at, last_assignment_error, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     for (let index = 1; index <= 3; index += 1) {
-      insertPackage.run(`pkg_pool_${index}`, `PKT-POOL-${index}`, "rst_pool", "restaurant_panel", "Manuel", `POOL-${index}`, `Müşteri ${index}`, "5550000000", `Adres ${index}`, "Akdeniz", "15 dk", "Nakit", "cash_expected", 100 + index, 36.79, 34.60, 36.80 + index / 1000, 34.61 + index / 1000, "", "awaiting_assignment", "pending", "Test havuz paketi", stamp, stamp);
+      insertPackage.run(`pkg_active_${index}`, `PKT-ACTIVE-${index}`, `rst_active_${index}`, "restaurant_panel", "Manuel", `ACTIVE-${index}`, `Aktif Müşteri ${index}`, "5550000000", `Aktif Adres ${index}`, "Akdeniz", "15 dk", "Nakit", "cash_expected", 100 + index, 36.79, 34.60, 36.80 + index / 1000, 34.61 + index / 1000, "", "accepted_by_courier", "assigned", `cr_pool_${index}`, `Havuz Kurye ${index}`, stamp, stamp, "Mevcut aktif paket", stamp, "", stamp, stamp);
+    }
+    for (let index = 1; index <= 3; index += 1) {
+      insertPackage.run(`pkg_pool_${index}`, `PKT-POOL-${index}`, "rst_pool", "restaurant_panel", "Manuel", `POOL-${index}`, `Müşteri ${index}`, "5550000000", `Adres ${index}`, "Akdeniz", "15 dk", "Nakit", "cash_expected", 100 + index, 36.79, 34.60, 36.80 + index / 1000, 34.61 + index / 1000, "", "awaiting_assignment", "pending", null, null, null, null, "Tum kuryeler dolu; tasma havuzu", stamp, "tum kuryeler busy", stamp, stamp);
     }
     db.close();
 
     let result = await courierRequest(baseUrl, "/api/courier/me", "token-pool-1");
     assert.equal(result.response.status, 200, result.body.error);
     assert.deepEqual(result.body.poolPackages.map((pkg) => pkg.id), ["pkg_pool_1", "pkg_pool_2", "pkg_pool_3"]);
-    assert.equal(result.body.poolAvailableSlots, 2);
+    assert.equal(result.body.courier.activeLoad, 1);
+    assert.equal(result.body.poolAvailableSlots, 1);
 
     result = await courierRequest(baseUrl, "/api/courier/pool/pkg_pool_1/claim", "token-pool-1", { method: "POST", body: "{}" });
     assert.equal(result.response.status, 200, result.body.error);
     assert.equal(result.body.packages.find((pkg) => pkg.id === "pkg_pool_1").status, "accepted_by_courier");
-    assert.equal(result.body.poolAvailableSlots, 1);
+    assert.equal(result.body.courier.activeLoad, 2);
+    assert.equal(result.body.poolAvailableSlots, 0);
+    assert.deepEqual(result.body.poolPackages, []);
 
     const duplicate = await courierRequest(baseUrl, "/api/courier/pool/pkg_pool_1/claim", "token-pool-2", { method: "POST", body: "{}" });
     assert.equal(duplicate.response.status, 409);
     assert.match(duplicate.body.error, /artik havuzda|baska bir kurye/);
 
-    result = await courierRequest(baseUrl, "/api/courier/pool/pkg_pool_2/claim", "token-pool-1", { method: "POST", body: "{}" });
-    assert.equal(result.response.status, 200, result.body.error);
-    assert.equal(result.body.courier.activeLoad, 2);
-    assert.equal(result.body.poolAvailableSlots, 0);
-
-    const overCapacity = await courierRequest(baseUrl, "/api/courier/pool/pkg_pool_3/claim", "token-pool-1", { method: "POST", body: "{}" });
+    const overCapacity = await courierRequest(baseUrl, "/api/courier/pool/pkg_pool_2/claim", "token-pool-1", { method: "POST", body: "{}" });
     assert.equal(overCapacity.response.status, 409);
     assert.match(overCapacity.body.error, /kapasitesine ulasti/);
+
+    const stateDb = new DatabaseSync(dbFile);
+    stateDb.prepare("UPDATE packages SET status = 'delivered' WHERE id = 'pkg_active_3'").run();
+    stateDb.prepare("UPDATE couriers SET status = 'online' WHERE id = 'cr_pool_3'").run();
+    stateDb.close();
+
+    result = await courierRequest(baseUrl, "/api/courier/me", "token-pool-2");
+    assert.equal(result.response.status, 200, result.body.error);
+    assert.deepEqual(result.body.poolPackages, []);
+    const automaticPriority = await courierRequest(baseUrl, "/api/courier/pool/pkg_pool_2/claim", "token-pool-2", { method: "POST", body: "{}" });
+    assert.equal(automaticPriority.response.status, 409);
+    assert.match(automaticPriority.body.error, /otomatik atama/i);
 
     const verificationDb = new DatabaseSync(dbFile);
     const claimedRows = verificationDb.prepare("SELECT id, status, assigned_courier_id FROM packages WHERE assigned_courier_id = ? ORDER BY id").all("cr_pool_1");
     assert.deepEqual(claimedRows.map((row) => ({ ...row })), [
+      { id: "pkg_active_1", status: "accepted_by_courier", assigned_courier_id: "cr_pool_1" },
       { id: "pkg_pool_1", status: "accepted_by_courier", assigned_courier_id: "cr_pool_1" },
-      { id: "pkg_pool_2", status: "accepted_by_courier", assigned_courier_id: "cr_pool_1" },
     ]);
     verificationDb.close();
   } finally {
