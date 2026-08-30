@@ -31,7 +31,7 @@ function applyPaperSize(html, paperSize) {
   const normalized = normalizePaperSize(paperSize);
   const page = normalized === "a4" ? "A4 portrait" : `${normalized} auto`;
   const width = normalized === "58mm" ? "54mm" : normalized === "a4" ? "190mm" : "76mm";
-  const style = `<style id="delivera-desktop-paper">@page{size:${page};margin:${normalized === "a4" ? "10mm" : "0"}!important}body{width:${width}!important;max-width:${width}!important;margin-left:auto!important;margin-right:auto!important}</style>`;
+  const style = `<style id="restomap-desktop-paper">@page{size:${page};margin:${normalized === "a4" ? "10mm" : "0"}!important}html,body{background:#fff!important;color:#111!important}body{width:${width}!important;max-width:${width}!important;margin-left:auto!important;margin-right:auto!important}</style>`;
   const source = String(html || "");
   return source.includes("</head>") ? source.replace("</head>", `${style}</head>`) : `${style}${source}`;
 }

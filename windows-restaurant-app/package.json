@@ -1,22 +1,23 @@
 {
-  "name": "delivera-restaurant-windows",
-  "version": "1.1.0",
+  "name": "restomap-restaurant-windows",
+  "version": "1.2.0",
   "description": "RESTOMAP restoran Windows uygulaması",
   "main": "main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win portable",
-    "test": "node --test printer-service.test.js"
+    "test": "node --test printer-service.test.js",
+    "test:render": "electron print-render-smoke.js"
   },
   "devDependencies": {
     "electron": "^39.2.6",
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "tr.com.deliveraexpres.restaurant",
-    "productName": "Delivera Restoran",
-    "artifactName": "Delivera-Restoran-${version}.${ext}",
+    "appId": "tr.com.restomap.restaurant",
+    "productName": "RESTOMAP Restoran",
+    "artifactName": "RESTOMAP-Restoran-${version}.${ext}",
     "files": [
       "main.js",
       "preload.js",
@@ -29,10 +30,10 @@
     },
     "win": {
       "target": "portable",
-      "icon": "assets/delivera.ico"
+      "icon": "assets/restomap.ico"
     },
     "portable": {
-      "artifactName": "Delivera-Restoran.exe"
+      "artifactName": "RESTOMAP-Restoran.exe"
     }
   }
 }

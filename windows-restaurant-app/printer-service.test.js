@@ -32,4 +32,7 @@ test("masaüstü kâğıt tercihini fiş HTML'ine uygular", () => {
   const html = applyPaperSize("<html><head></head><body>Fiş</body></html>", "58mm");
   assert.match(html, /58mm auto/);
   assert.match(html, /width:54mm/);
+  assert.match(html, /background:#fff!important/);
+  assert.match(html, /color:#111!important/);
+  assert.match(html, /restomap-desktop-paper/);
 });

@@ -1,4 +1,4 @@
-package com.delivera.paket;
+package com.restomap.app;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -39,9 +39,9 @@ import com.getcapacitor.BridgeWebViewClient;
 import java.util.Locale;
 
 public class MainActivity extends BridgeActivity {
-    private static final String COURIER_URL = "https://deliveraexpres.com.tr/courier.html";
-    private static final String PRIVACY_URL = "https://deliveraexpres.com.tr/privacy.html";
-    private static final String NOTIFICATION_CHANNEL_ID = "delivera_critical_packages";
+    private static final String COURIER_URL = "https://restomap.com.tr/";
+    private static final String PRIVACY_URL = "https://restomap.com.tr/privacy.html";
+    private static final String NOTIFICATION_CHANNEL_ID = "restomap_critical_packages";
     private static final int LOCATION_PERMISSION_REQUEST = 4101;
     private static final int NOTIFICATION_PERMISSION_REQUEST = 4102;
     private static final int BACKGROUND_LOCATION_PERMISSION_REQUEST = 4103;
@@ -86,7 +86,7 @@ public class MainActivity extends BridgeActivity {
         settings.setAllowContentAccess(true);
         settings.setSupportMultipleWindows(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setUserAgentString(settings.getUserAgentString() + " Delivera-Android/1.1");
+        settings.setUserAgentString(settings.getUserAgentString() + " RESTOMAP-Android/1.2");
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -115,7 +115,7 @@ public class MainActivity extends BridgeActivity {
                 String fileName = URLUtil.guessFileName(url, contentDisposition, mimeType);
                 DownloadManager.Request request = new DownloadManager.Request(uri)
                     .setTitle(fileName)
-                    .setDescription("Delivera dosyası indiriliyor")
+                    .setDescription("RESTOMAP dosyası indiriliyor")
                     .setMimeType(mimeType)
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                     .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, fileName)
@@ -213,7 +213,7 @@ public class MainActivity extends BridgeActivity {
     private void showLocationDisclosure() {
         new AlertDialog.Builder(this)
             .setTitle("Konum verilerinin kullanımı")
-            .setMessage("Delivera, vardiyanız açıkken paket ataması, canlı kurye takibi, rota ve teslimat güvenliği özelliklerini sağlamak için hassas konum verinizi toplar ve operasyon merkezine iletir. Konum, uygulama kapalıyken veya kullanımda değilken de arka planda işlenebilir. Vardiyanız kapalıyken konum gönderilmez ve konum verisi reklam amacıyla kullanılmaz.")
+            .setMessage("RESTOMAP, vardiyanız açıkken paket ataması, canlı kurye takibi, rota ve teslimat güvenliği özelliklerini sağlamak için hassas konum verinizi toplar ve operasyon merkezine iletir. Konum, uygulama kapalıyken veya kullanımda değilken de arka planda işlenebilir. Vardiyanız kapalıyken konum gönderilmez ve konum verisi reklam amacıyla kullanılmaz.")
             .setNeutralButton("Gizlilik Politikası", (dialog, which) -> openExternal(Uri.parse(PRIVACY_URL)))
             .setNegativeButton("Şimdi değil", (dialog, which) -> requestNotificationPermission())
             .setPositiveButton("Kabul et ve devam et", (dialog, which) -> {
@@ -246,7 +246,7 @@ public class MainActivity extends BridgeActivity {
         getPreferences(MODE_PRIVATE).edit().putBoolean("background_location_prompted", true).apply();
         new AlertDialog.Builder(this)
             .setTitle("Arka planda canlı konum")
-            .setMessage("Delivera, vardiyanız açıkken uygulama ekranda olmasa bile dağıtım konumunuzu operasyon merkezine iletir. Bu özellik paket ataması, canlı kurye takibi ve teslimat güvenliği için gereklidir. Vardiyanız kapalıyken konum gönderilmez.")
+            .setMessage("RESTOMAP, vardiyanız açıkken uygulama ekranda olmasa bile dağıtım konumunuzu operasyon merkezine iletir. Bu özellik paket ataması, canlı kurye takibi ve teslimat güvenliği için gereklidir. Vardiyanız kapalıyken konum gönderilmez.")
             .setNegativeButton("Daha sonra", null)
             .setPositiveButton("Devam et", (dialog, which) -> {
                 if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
@@ -322,7 +322,7 @@ public class MainActivity extends BridgeActivity {
         if (uri == null || !"https".equalsIgnoreCase(uri.getScheme())) return false;
         String host = uri.getHost();
         return host != null &&
-            (host.equalsIgnoreCase("deliveraexpres.com.tr") || host.toLowerCase(Locale.ROOT).endsWith(".deliveraexpres.com.tr"));
+            (host.equalsIgnoreCase("restomap.onrender.com") || host.equalsIgnoreCase("restomap.com.tr") || host.toLowerCase(Locale.ROOT).endsWith(".restomap.com.tr"));
     }
 
     private void openExternal(Uri uri) {
@@ -349,7 +349,7 @@ public class MainActivity extends BridgeActivity {
             ".card{width:min(86vw,380px);padding:28px;border:1px solid rgba(255,255,255,.12);border-radius:28px;background:linear-gradient(160deg,rgba(255,255,255,.10),rgba(255,255,255,.03));box-shadow:0 24px 80px rgba(0,0,0,.42)}" +
             ".mark{width:64px;height:64px;border-radius:20px;display:grid;place-items:center;background:#21d07a;color:#07110d;font-size:32px;font-weight:900;margin-bottom:18px}" +
             "h1{font-size:22px;margin:0 0 10px}p{color:#b9cfc4;line-height:1.5;margin:0 0 22px}.btn{width:100%;border:0;border-radius:18px;background:#21d07a;color:#07110d;font-weight:800;font-size:16px;padding:15px}</style>" +
-            "</head><body><main class=\"card\"><div class=\"mark\">D</div><h1>Delivera</h1>" +
+            "</head><body><main class=\"card\"><div class=\"mark\">R</div><h1>RESTOMAP</h1>" +
             "<p>\u0130nternet ba\u011flant\u0131s\u0131 yok. L\u00fctfen ba\u011flant\u0131n\u0131z\u0131 kontrol edin.</p>" +
             "<button class=\"btn\" onclick=\"location.href='" + COURIER_URL + "'\">Tekrar dene</button></main></body></html>"
         );
@@ -361,12 +361,13 @@ public class MainActivity extends BridgeActivity {
         }
         NotificationChannel channel = new NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
-            "Delivera",
+            "RESTOMAP",
             NotificationManager.IMPORTANCE_HIGH
         );
         channel.setDescription("Kurye paket ve durum bildirimleri");
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) {
+            manager.deleteNotificationChannel("delivera_critical_packages");
             manager.createNotificationChannel(channel);
         }
     }
@@ -415,6 +416,50 @@ public class MainActivity extends BridgeActivity {
             view.evaluateJavascript("Boolean(document.querySelector('meta[name=\\\"delivera-offline\\\"]'))", (value) -> activity.offlinePageVisible = "true".equals(value));
             injectNotificationBridge(view);
             injectNativeSessionBridge(view);
+            injectMobileLayout(view);
+        }
+
+        private void injectMobileLayout(WebView view) {
+            view.evaluateJavascript(
+                "(function(){" +
+                "if(window.__restomapMobileLayout)return;window.__restomapMobileLayout=true;" +
+                "var style=document.createElement('style');style.id='restomap-native-mobile-style';" +
+                "style.textContent='" +
+                "html.restomap-native-app,html.restomap-native-app body{max-width:100vw!important;}" +
+                "html.restomap-native-app body.restomap-auth-visible{min-width:0!important;width:100%!important;max-width:100vw!important;overflow:hidden!important;}" +
+                "html.restomap-native-app .delivera-auth-shell{width:100vw!important;max-width:100vw!important;overflow-x:hidden!important;}" +
+                "@media(max-width:760px){" +
+                "html.restomap-native-app body.restomap-native-panel{min-width:0!important;width:100vw!important;max-width:100vw!important;overflow-x:hidden!important;}" +
+                "body.restomap-native-panel main{margin-left:0!important;min-width:0!important;width:100vw!important;max-width:100vw!important;overflow-x:auto!important;}" +
+                "body.restomap-native-panel aside{position:fixed!important;inset:0 auto 0 0!important;width:min(84vw,320px)!important;max-width:320px!important;height:100dvh!important;transform:translateX(-105%)!important;transition:transform .2s ease!important;z-index:2147482000!important;overflow-y:auto!important;}" +
+                "body.restomap-native-panel.restomap-mobile-menu-open aside{transform:translateX(0)!important;}" +
+                "body.restomap-native-panel main>header{padding-left:64px!important;max-width:100vw!important;overflow-x:auto!important;}" +
+                "body.restomap-native-panel main>div,body.restomap-native-panel main>section{min-width:0!important;max-width:100vw!important;}" +
+                ".restomap-native-menu{display:flex!important;position:fixed!important;left:12px!important;top:12px!important;width:42px!important;height:42px!important;border:0!important;border-radius:12px!important;align-items:center!important;justify-content:center!important;background:#0b4bc0!important;color:#fff!important;font-size:24px!important;line-height:1!important;box-shadow:0 6px 20px rgba(0,0,0,.25)!important;z-index:2147482500!important;}" +
+                ".restomap-native-menu-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2147481500;}" +
+                "body.restomap-mobile-menu-open .restomap-native-menu-backdrop{display:block;}" +
+                "body.restomap-auth-visible .restomap-native-menu,body.restomap-auth-visible .restomap-native-menu-backdrop{display:none!important;}" +
+                "}" +
+                "';document.head.appendChild(style);document.documentElement.classList.add('restomap-native-app');" +
+                "function closeMenu(){document.body&&document.body.classList.remove('restomap-mobile-menu-open');}" +
+                "function sync(){if(!document.body)return;" +
+                "var panel=/\\/(admin|restaurant)\\.html$/i.test(location.pathname);" +
+                "var auth=!!document.querySelector('.delivera-auth-shell');" +
+                "document.body.classList.toggle('restomap-native-panel',panel);" +
+                "document.body.classList.toggle('restomap-auth-visible',auth);" +
+                "if(!panel)return;" +
+                "var button=document.querySelector('.restomap-native-menu');" +
+                "if(!button){button=document.createElement('button');button.type='button';button.className='restomap-native-menu';button.setAttribute('aria-label','Menüyü aç');button.textContent='☰';button.onclick=function(){document.body.classList.toggle('restomap-mobile-menu-open');};document.body.appendChild(button);}" +
+                "var backdrop=document.querySelector('.restomap-native-menu-backdrop');" +
+                "if(!backdrop){backdrop=document.createElement('div');backdrop.className='restomap-native-menu-backdrop';backdrop.onclick=closeMenu;document.body.appendChild(backdrop);}" +
+                "document.querySelectorAll('aside a,aside button').forEach(function(el){if(el.dataset.restomapMenuBound)return;el.dataset.restomapMenuBound='1';el.addEventListener('click',closeMenu);});" +
+                "if(auth)closeMenu();" +
+                "}" +
+                "sync();new MutationObserver(sync).observe(document.documentElement,{childList:true,subtree:true});" +
+                "window.addEventListener('resize',sync);" +
+                "})();",
+                null
+            );
         }
 
         private void injectNotificationBridge(WebView view) {
@@ -424,7 +469,7 @@ public class MainActivity extends BridgeActivity {
                 "window.__deliveraNativeNotificationBridge=true;" +
                 "function NativeNotification(title,options){" +
                 "options=options||{};" +
-                "window.DeliveraNativeNotifications.show(String(title||'Delivera'),String(options.body||''));" +
+                "window.DeliveraNativeNotifications.show(String(title||'RESTOMAP'),String(options.body||''));" +
                 "}" +
                 "NativeNotification.permission=window.DeliveraNativeNotifications.areEnabled()?'granted':'default';" +
                 "NativeNotification.requestPermission=function(){" +
@@ -461,8 +506,9 @@ public class MainActivity extends BridgeActivity {
                 return false;
             }
             return (
-                host.equals("deliveraexpres.com.tr") ||
-                host.endsWith(".deliveraexpres.com.tr") ||
+                host.equals("restomap.onrender.com") ||
+                host.equals("restomap.com.tr") ||
+                host.endsWith(".restomap.com.tr") ||
                 host.endsWith(".google.com") ||
                 host.equals("google.com") ||
                 host.endsWith(".google.com.tr") ||
@@ -556,8 +602,8 @@ public class MainActivity extends BridgeActivity {
             );
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(activity, NOTIFICATION_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_delivera_paket_monochrome)
-                .setContentTitle(title == null || title.isEmpty() ? "Delivera" : title)
+                .setSmallIcon(R.drawable.ic_restomap_paket_monochrome)
+                .setContentTitle(title == null || title.isEmpty() ? "RESTOMAP" : title)
                 .setContentText(body == null ? "" : body)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(body == null ? "" : body))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)

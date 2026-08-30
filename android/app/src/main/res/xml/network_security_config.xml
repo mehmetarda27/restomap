@@ -6,7 +6,8 @@
         </trust-anchors>
     </base-config>
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">paketdelivera-1.onrender.com</domain>
+        <domain includeSubdomains="false">restomap.onrender.com</domain>
+        <domain includeSubdomains="true">restomap.com.tr</domain>
         <domain includeSubdomains="true">google.com</domain>
         <domain includeSubdomains="true">google.com.tr</domain>
         <domain includeSubdomains="true">googleapis.com</domain>

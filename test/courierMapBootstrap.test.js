@@ -28,3 +28,40 @@ test("courier bridge keeps the open shift alive and retries location after retur
   assert.match(source, /addEventListener\("online", pushLiveLocationHeartbeat\)/);
   assert.match(source, /locationOnly:\s*true/);
 });
+
+test("courier map switches each package from restaurant to customer after departure", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "courier-design-bridge.js"), "utf8");
+  const start = source.indexOf("function validMapCoordinates");
+  const end = source.indexOf("\n  function liveMapBounds", start);
+  assert.ok(start >= 0 && end > start, "map target helpers are missing");
+
+  const helpers = new Function(`${source.slice(start, end)}; return { packageMapPoints };`)();
+  const basePackage = {
+    id: "pkg-map-switch",
+    restaurantId: "rst-map-switch",
+    restaurantName: "Test Restoran",
+    restaurantLat: 36.8,
+    restaurantLng: 34.6,
+    recipient: "Test Müşteri",
+    customerLat: 36.81,
+    customerLng: 34.61,
+  };
+
+  assert.deepEqual(helpers.packageMapPoints([{ ...basePackage, status: "accepted_by_courier" }]), [{
+    latitude: 36.8,
+    longitude: 34.6,
+    type: "restaurant",
+    name: "Test Restoran",
+    packageCount: 1,
+  }]);
+  assert.deepEqual(helpers.packageMapPoints([{ ...basePackage, status: "on_route" }]), [{
+    latitude: 36.81,
+    longitude: 34.61,
+    type: "customer",
+    name: "Test Müşteri",
+    packageCount: 1,
+  }]);
+  assert.equal(helpers.packageMapPoints([{ ...basePackage, status: "on_route", customerLat: null, customerLng: null }])[0].type, "restaurant");
+  assert.match(source, /destinationKey !== lastDestinationMapKey/);
+  assert.match(source, /leafletMap\.fitBounds/);
+});

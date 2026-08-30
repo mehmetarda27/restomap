@@ -1,18 +1,19 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
-const courierUrl = "https://deliveraexpres.com.tr/courier.html";
+const appUrl = "https://restomap.com.tr/";
 
 const config: CapacitorConfig = {
-  appId: "com.delivera.paket",
-  appName: "Delivera",
+  appId: "com.restomap.app",
+  appName: "RESTOMAP",
   webDir: "mobile-web",
   server: {
-    url: courierUrl,
+    url: appUrl,
     cleartext: false,
     androidScheme: "https",
     allowNavigation: [
-      "deliveraexpres.com.tr",
-      "*.deliveraexpres.com.tr",
+      "restomap.onrender.com",
+      "restomap.com.tr",
+      "*.restomap.com.tr",
       "*.google.com",
       "*.google.com.tr",
       "*.googleapis.com",

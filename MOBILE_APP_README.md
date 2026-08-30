@@ -1,9 +1,9 @@
-# Delivera Mobile App
+# RESTOMAP Mobile App
 
-`Delivera`, sadece kuryeler icin hazirlanan Android WebView/Capacitor uygulamasidir. Mevcut kurye panelini bozmadan su adresi yukler:
+`RESTOMAP`, yönetici, restoran ve kurye panellerini tek giriş ekranından açan Android WebView/Capacitor uygulamasıdır. Şu adresi yükler:
 
 ```text
-https://deliveraexpres.com.tr/courier.html
+https://restomap.com.tr/
 ```
 
 ## Kurulum
@@ -55,7 +55,7 @@ npm run mobile:sync
 Uygulama icinde sadece asagidaki domainler WebView'de calisir:
 
 ```text
-deliveraexpres.com.tr ve alt domainleri
+restomap.onrender.com, restomap.com.tr ve alt domainleri
 google.com ve alt domainleri
 google.com.tr ve alt domainleri
 googleapis.com
@@ -69,10 +69,10 @@ Rastgele dis linkler uygulama icinde acilmaz; Android'in guvenli dis uygulama/ta
 
 ## Logo Degistirme
 
-Delivera logosu Android ekran yogunluklarina uygun PNG launcher ikonlari olarak `android/app/src/main/res/mipmap-*` klasorlerinde bulunur. Bildirim cubugunda Android'in zorunlu tek renkli simgesi kullanilir:
+RESTOMAP logosu Android ekran yogunluklarina uygun PNG launcher ikonlari olarak `android/app/src/main/res/mipmap-*` klasorlerinde bulunur. Bildirim cubugunda Android'in zorunlu tek renkli simgesi kullanilir:
 
 ```text
-android/app/src/main/res/drawable/ic_delivera_paket_monochrome.xml
+android/app/src/main/res/drawable/ic_restomap_paket_monochrome.xml
 ```
 
 Adaptif launcher ikonlari:
@@ -102,7 +102,7 @@ Uygulama acilisinda konum izni istenir. Kurye oturum actiginda native foreground
 Konum izninden once uygulama icinde belirgin veri kullanimi aciklamasi gosterilir. Gizlilik politikasi hem bu aciklamadan hem de asagidaki herkese acik URL'den erisilebilir:
 
 ```text
-https://deliveraexpres.com.tr/privacy.html
+https://restomap.onrender.com/privacy.html
 ```
 
 Play Console'da arka plan konumu izin beyan formu, kisa ekran videosu, Data Safety formu ve gizlilik politikasi URL'si ayrica tamamlanmalidir.
@@ -116,7 +116,7 @@ Web paneli `Notification` API kullandiginda Android WebView icinde native bridge
 Foreground servis calisirken uygulama arka planda da yeni paketleri kontrol eder. Kullanici uygulamayi Android ayarlarindan zorla durdurdugunda dahi uzaktan bildirim almak istenirse Firebase Cloud Messaging kurulumu gerekir. Hazirlik adimlari:
 
 1. Firebase Console'da Android app olusturun.
-2. Paket adi olarak `com.delivera.paket` girin.
+2. Paket adı olarak `com.restomap.app` girin.
 3. `google-services.json` dosyasini indirin.
 4. Dosyayi `android/app/google-services.json` konumuna koyun.
 5. Gerekli backend FCM bilgilerini production secret olarak tutun.
@@ -150,7 +150,7 @@ WebView'de JavaScript, DOM storage ve cookie destegi aciktir. Kurye login token/
 - Android geri tusu ve geri hareketi WebView gecmisinde calisir.
 - Harita, telefon ve harici web adresleri uygun Android uygulamasina guvenli sekilde yonlendirilir.
 - HTML dosya alanlari sistem dosya secicisini ve istege bagli kamerayi acar.
-- Delivera alan adindaki indirmeler oturum cerezleri korunarak Android indirme yoneticisine aktarilir.
+- RESTOMAP alan adindaki indirmeler oturum cerezleri korunarak Android indirme yoneticisine aktarilir.
 - Internet geri geldiginde ozel hata ekrani kurye panelini otomatik yeniden yukler.
 - HTTPS disi karisik icerik engellenir ve WebView Safe Browsing aciktir.
 

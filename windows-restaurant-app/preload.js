@@ -54,8 +54,8 @@ function receiptHtml(pkg, restaurantName, settings = {}) {
 }
 
 async function pollOrders() {
-  if (polling || webBridgeReady || location.origin !== "https://deliveraexpres.com.tr") return;
-  const token = localStorage.getItem("deliveraRestaurantToken");
+  if (polling || webBridgeReady || !["https://restomap.onrender.com", "https://restomap.com.tr", "https://www.restomap.com.tr"].includes(location.origin)) return;
+  const token = localStorage.getItem("restomapRestaurantToken") || localStorage.getItem("deliveraRestaurantToken");
   if (!token) return;
   polling = true;
   try {

@@ -1,4 +1,4 @@
-package com.delivera.paket;
+package com.restomap.app;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -21,7 +21,7 @@ public class DeliveraBootReceiver extends BroadcastReceiver {
                 DeliveraCourierService.start(context);
             } catch (RuntimeException ignored) {
                 // New Android versions can defer location foreground services after boot.
-                // Opening Delivera restarts it immediately.
+                // Opening RESTOMAP restarts it immediately.
             }
         }
     }

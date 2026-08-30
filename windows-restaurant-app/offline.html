@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Delivera Restoran</title>
+  <title>RESTOMAP Restoran</title>
   <style>
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0806;color:#fff;font-family:Segoe UI,Arial,sans-serif}.card{width:min(520px,90vw);padding:38px;border:1px solid #7c3b13;border-radius:22px;text-align:center;background:linear-gradient(145deg,#1b1009,#080706);box-shadow:0 24px 80px #0008}.logo{width:96px;height:96px;border-radius:20px}.brand{margin:18px 0 4px;font-size:28px;font-weight:900}.state{color:#fb923c;font-weight:800}.message{color:#d6d3d1;line-height:1.6}.retry{margin-top:18px;border:0;border-radius:12px;padding:13px 24px;background:#f97316;color:#fff;font-size:16px;font-weight:800;cursor:pointer}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#080b12;color:#fff;font-family:Segoe UI,Arial,sans-serif}.card{width:min(520px,90vw);padding:38px;border:1px solid #1748a8;border-radius:22px;text-align:center;background:linear-gradient(145deg,#101827,#070a10);box-shadow:0 24px 80px #0008}.logo{width:min(330px,80%);height:170px;object-fit:contain;border-radius:20px;background:#fff}.brand{margin:18px 0 4px;font-size:28px;font-weight:900}.state{color:#4f8cff;font-weight:800}.message{color:#d6d3d1;line-height:1.6}.retry{margin-top:18px;border:0;border-radius:12px;padding:13px 24px;background:#1456c5;color:#fff;font-size:16px;font-weight:800;cursor:pointer}
   </style>
 </head>
 <body>
   <main class="card">
-    <img class="logo" src="assets/delivera.png" alt="Delivera">
-    <div class="brand">DELIVERA RESTORAN</div>
+    <img class="logo" src="assets/restomap.png" alt="RESTOMAP">
+    <div class="brand">RESTOMAP RESTORAN</div>
     <p class="state">Bağlantı bekleniyor</p>
     <p class="message">İnternet veya sunucu bağlantısı yeniden kurulduğunda panel açılacaktır.</p>
     <button class="retry" type="button">Tekrar Dene</button>
   </main>
   <script>
-    const params=new URLSearchParams(location.search);const target=params.get("target")||"https://deliveraexpres.com.tr/restaurant.html";
+    const params=new URLSearchParams(location.search);const target=params.get("target")||"https://restomap.onrender.com/restaurant.html";
     document.querySelector(".retry").onclick=()=>location.href=target;
     setTimeout(()=>location.href=target,8000);
   </script>

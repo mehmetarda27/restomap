@@ -1,4 +1,4 @@
-package com.delivera.paket;
+package com.restomap.app;
 
 import android.Manifest;
 import android.app.Notification;
@@ -45,10 +45,10 @@ public class DeliveraCourierService extends Service implements LocationListener 
     public static final String KEY_REFRESH_TOKEN = "refresh_token";
     public static final String KEY_SERVICE_ENABLED = "service_enabled";
 
-    private static final String API_ROOT = "https://deliveraexpres.com.tr";
+    private static final String API_ROOT = "https://restomap.com.tr";
     private static final String COURIER_URL = API_ROOT + "/courier.html";
-    private static final String SERVICE_CHANNEL = "delivera_background_location";
-    private static final String ALERT_CHANNEL = "delivera_critical_packages";
+    private static final String SERVICE_CHANNEL = "restomap_background_location";
+    private static final String ALERT_CHANNEL = "restomap_critical_packages";
     private static final int SERVICE_NOTIFICATION_ID = 7201;
     private static final String KEY_SEEN_ASSIGNMENTS = "seen_assignment_keys";
     private static final long POLL_SECONDS = 20L;
@@ -247,7 +247,7 @@ public class DeliveraCourierService extends Service implements LocationListener 
                     || "restaurant-confirmed".equals(eventType)
                     || "package-status".equals(eventType);
                 if (firstWorkspaceLoaded && !assignmentDuplicate && !seenNotificationIds.contains(id)) {
-                    showCriticalNotification("Delivera", item.optString("message", "Yeni bildiriminiz var."), "notification-" + id);
+                    showCriticalNotification("RESTOMAP", item.optString("message", "Yeni bildiriminiz var."), "notification-" + id);
                 }
             }
         }
@@ -362,7 +362,7 @@ public class DeliveraCourierService extends Service implements LocationListener 
         connection.setConnectTimeout(10_000);
         connection.setReadTimeout(12_000);
         connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("User-Agent", "Delivera-Android/1.0");
+        connection.setRequestProperty("User-Agent", "RESTOMAP-Android/1.2");
         if (bearerToken != null && !bearerToken.isEmpty()) {
             connection.setRequestProperty("Authorization", "Bearer " + bearerToken);
         }
@@ -392,10 +392,12 @@ public class DeliveraCourierService extends Service implements LocationListener 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager == null) return;
+        manager.deleteNotificationChannel("delivera_background_location");
+        manager.deleteNotificationChannel("delivera_critical_packages");
 
         NotificationChannel serviceChannel = new NotificationChannel(
             SERVICE_CHANNEL,
-            "Delivera arka plan konumu",
+            "RESTOMAP arka plan konumu",
             NotificationManager.IMPORTANCE_LOW
         );
         serviceChannel.setDescription("Vardiya sırasında canlı konum ve paket bağlantısı");
@@ -415,8 +417,8 @@ public class DeliveraCourierService extends Service implements LocationListener 
 
     private Notification buildServiceNotification(String text) {
         return new NotificationCompat.Builder(this, SERVICE_CHANNEL)
-            .setSmallIcon(R.drawable.ic_delivera_paket_monochrome)
-            .setContentTitle("Delivera aktif")
+            .setSmallIcon(R.drawable.ic_restomap_paket_monochrome)
+            .setContentTitle("RESTOMAP aktif")
             .setContentText(text)
             .setContentIntent(appPendingIntent("service"))
             .setOngoing(true)
@@ -438,7 +440,7 @@ public class DeliveraCourierService extends Service implements LocationListener 
     private void showCriticalNotification(String title, String body, String tag) {
         if (!canPostNotifications() || !NotificationManagerCompat.from(this).areNotificationsEnabled()) return;
         Notification notification = new NotificationCompat.Builder(this, ALERT_CHANNEL)
-            .setSmallIcon(R.drawable.ic_delivera_paket_monochrome)
+            .setSmallIcon(R.drawable.ic_restomap_paket_monochrome)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))

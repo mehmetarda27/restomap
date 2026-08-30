@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Delivera</string>
-    <string name="title_activity_main">Delivera</string>
-    <string name="package_name">com.delivera.paket</string>
-    <string name="custom_url_scheme">com.delivera.paket</string>
+    <string name="app_name">RESTOMAP</string>
+    <string name="title_activity_main">RESTOMAP</string>
+    <string name="package_name">com.restomap.app</string>
+    <string name="custom_url_scheme">com.restomap.app</string>
 </resources>

@@ -26,9 +26,8 @@
   let leafletLoader = null;
   let leafletMap = null;
   let courierMapMarker = null;
-  let restaurantMapMarkers = [];
-  let lastRestaurantMapKey = "";
-  let leafletMapHasFitted = false;
+  let destinationMapMarkers = [];
+  let lastDestinationMapKey = "";
   let courierMapPoll = null;
   let courierMapRefreshTimer = null;
   let courierMapRefreshBusy = false;
@@ -114,7 +113,7 @@
       .delivera-notification-button{position:relative;width:48px;height:48px;border:0;border-radius:12px;background:#fff;color:#0061a4;display:grid;place-items:center;box-shadow:0 5px 16px #001d3626}.delivera-notification-badge{position:absolute;right:-5px;top:-5px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#ba1a1a;color:#fff;font:700 11px Inter,sans-serif;display:grid;place-items:center}.delivera-notification-badge:empty{display:none}
       .delivera-offer-modal{z-index:10020;background:#001d36d9;backdrop-filter:blur(7px)}.delivera-offer-sheet{width:min(100%,460px);max-height:92vh;overflow:auto;background:#fff;border-radius:22px;padding:20px;box-shadow:0 28px 80px #0008;border:3px solid #2196f3}.delivera-offer-alert{display:flex;align-items:center;gap:12px;padding:14px;border-radius:14px;background:#d1e4ff;color:#003258;margin-bottom:14px}.delivera-offer-alert .material-symbols-outlined{font-size:34px}.delivera-offer-alert h2{font:800 21px 'Hanken Grotesk',sans-serif;margin:0}.delivera-offer-alert p{font-size:12px;margin:3px 0 0}.delivera-offer-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.delivera-offer-item{padding:11px;border-radius:10px;background:#f1f4f7;min-width:0}.delivera-offer-item.wide{grid-column:1/-1}.delivera-offer-item span{display:block;color:#66717d;font-size:10px;margin-bottom:4px}.delivera-offer-item strong{display:block;font-size:13px;overflow-wrap:anywhere}.delivera-offer-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}.delivera-offer-actions button{min-height:52px;border:0;border-radius:11px;font-weight:800}.delivera-offer-actions .accept{background:#0061a4;color:#fff}.delivera-offer-actions .reject{background:#ffdad6;color:#ba1a1a}.delivera-push-enable{width:100%;min-height:44px;margin-top:12px;border:1px solid #0061a4;border-radius:10px;background:#fff;color:#0061a4;font-weight:700}.delivera-notification-list{display:grid;gap:9px}.delivera-notification-item{padding:12px;border-radius:10px;background:#f1f4f7;border-left:4px solid #2196f3}.delivera-notification-item strong{display:block;font-size:12px}.delivera-notification-item time{display:block;color:#66717d;font-size:10px;margin-top:5px}
       .delivera-report-detail{display:grid;gap:12px}.delivera-detail-title{display:flex;align-items:center;gap:10px;margin:0}.delivera-detail-title span{color:#0061a4}.delivera-detail-card{background:#fff;border:1px solid #d8dadd;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(25,28,30,.05)}.delivera-detail-card h3{font:600 16px 'Hanken Grotesk',sans-serif;margin:0 0 12px}.delivera-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.delivera-detail-metric{background:#f2f4f7;border-radius:9px;padding:12px;min-width:0}.delivera-detail-metric span{display:block;color:#66717d;font-size:11px;margin-bottom:5px}.delivera-detail-metric strong{display:block;color:#191c1e;font:700 15px 'JetBrains Mono',monospace;overflow-wrap:anywhere}.delivera-detail-list{display:grid;gap:8px}.delivera-detail-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:11px 0;border-bottom:1px solid #eceef1}.delivera-detail-row:last-child{border-bottom:0}.delivera-detail-row span{font-size:12px;color:#66717d}.delivera-detail-row strong{text-align:right;font-size:12px}.delivera-detail-empty{color:#66717d;font-size:13px;padding:8px 0}.delivera-report-back{width:100%;min-height:46px;border:1px solid #0061a4;border-radius:10px;background:#fff;color:#0061a4;font-weight:700}
-      .map-bg.leaflet-container{z-index:0;background:#dce9f4;font-family:Inter,sans-serif}.map-bg .leaflet-control-zoom{margin-top:12px}.map-bg .leaflet-control-attribution{font-size:8px}.delivera-leaflet-courier-icon,.delivera-leaflet-restaurant-icon{background:transparent!important;border:0!important;overflow:visible!important}.delivera-courier-dot{position:relative;width:26px;height:26px;border:4px solid #fff;border-radius:50%;background:#0878d1;box-shadow:0 3px 12px #003b6670;display:block}.delivera-courier-dot::after{content:"";position:absolute;inset:50% auto auto 50%;width:54px;height:54px;border-radius:50%;background:#2196f34d;transform:translate(-50%,-50%);animation:delivera-marker-pulse 1.8s ease-out infinite}.delivera-restaurant-dot{position:relative;width:38px;height:38px;border:3px solid #fff;border-radius:50%;background:#f57c00;color:#fff;box-shadow:0 3px 12px #4d260066;display:grid;place-items:center;cursor:pointer}.delivera-restaurant-dot .material-symbols-outlined{font-size:20px}.delivera-restaurant-marker-label{position:absolute;left:50%;top:42px;transform:translateX(-50%);max-width:145px;width:max-content;padding:5px 8px;border-radius:8px;background:#fff;color:#263238;box-shadow:0 2px 9px #0003;font:700 11px Inter,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.delivera-side-menu{transition:transform .22s ease}.delivera-side-menu-trigger{cursor:pointer;user-select:none}.delivera-side-menu.is-collapsed{transform:translateX(calc(100% + 13px))}.delivera-side-menu.is-collapsed .delivera-side-menu-trigger{transform:translateY(-50%)}@keyframes delivera-marker-pulse{0%{transform:translate(-50%,-50%) scale(.45);opacity:.8}100%{transform:translate(-50%,-50%) scale(1.35);opacity:0}}.delivera-shift-start{width:100%;min-height:82px;border:1px solid #5bd477;border-radius:12px;background:#d7f8de;color:#005313;padding:14px 18px;display:flex;align-items:center;gap:14px;text-align:left}.delivera-shift-start .material-symbols-outlined{width:50px;height:50px;border-radius:10px;background:#006e1c;color:#fff;display:grid;place-items:center;font-size:30px}.delivera-shift-start strong{display:block;font-size:16px}.delivera-shift-start small{display:block;color:#276636;margin-top:3px}.delivera-shift-start:disabled{opacity:.6}
+      .map-bg.leaflet-container{z-index:0;background:#dce9f4;font-family:Inter,sans-serif}.map-bg .leaflet-control-zoom{margin-top:12px}.map-bg .leaflet-control-attribution{font-size:8px}.delivera-leaflet-courier-icon,.delivera-leaflet-restaurant-icon,.delivera-leaflet-customer-icon{background:transparent!important;border:0!important;overflow:visible!important}.delivera-courier-dot{position:relative;width:26px;height:26px;border:4px solid #fff;border-radius:50%;background:#0878d1;box-shadow:0 3px 12px #003b6670;display:block}.delivera-courier-dot::after{content:"";position:absolute;inset:50% auto auto 50%;width:54px;height:54px;border-radius:50%;background:#2196f34d;transform:translate(-50%,-50%);animation:delivera-marker-pulse 1.8s ease-out infinite}.delivera-restaurant-dot,.delivera-customer-dot{position:relative;width:38px;height:38px;border:3px solid #fff;border-radius:50%;color:#fff;display:grid;place-items:center;cursor:pointer}.delivera-restaurant-dot{background:#f57c00;box-shadow:0 3px 12px #4d260066}.delivera-customer-dot{background:#b3261e;box-shadow:0 3px 12px #5f120d70}.delivera-restaurant-dot .material-symbols-outlined,.delivera-customer-dot .material-symbols-outlined{font-size:20px}.delivera-restaurant-marker-label{position:absolute;left:50%;top:42px;transform:translateX(-50%);max-width:145px;width:max-content;padding:5px 8px;border-radius:8px;background:#fff;color:#263238;box-shadow:0 2px 9px #0003;font:700 11px Inter,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.delivera-side-menu{transition:transform .22s ease}.delivera-side-menu-trigger{cursor:pointer;user-select:none}.delivera-side-menu.is-collapsed{transform:translateX(calc(100% + 13px))}.delivera-side-menu.is-collapsed .delivera-side-menu-trigger{transform:translateY(-50%)}@keyframes delivera-marker-pulse{0%{transform:translate(-50%,-50%) scale(.45);opacity:.8}100%{transform:translate(-50%,-50%) scale(1.35);opacity:0}}.delivera-shift-start{width:100%;min-height:82px;border:1px solid #5bd477;border-radius:12px;background:#d7f8de;color:#005313;padding:14px 18px;display:flex;align-items:center;gap:14px;text-align:left}.delivera-shift-start .material-symbols-outlined{width:50px;height:50px;border-radius:10px;background:#006e1c;color:#fff;display:grid;place-items:center;font-size:30px}.delivera-shift-start strong{display:block;font-size:16px}.delivera-shift-start small{display:block;color:#276636;margin-top:3px}.delivera-shift-start:disabled{opacity:.6}
       .map-bg .leaflet-control-zoom{margin-top:150px!important;margin-left:12px!important}.delivera-package-meta{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:10px 0}.delivera-package-meta span{padding:8px;border-radius:8px;background:#f1f4f7;color:#46515c;font-size:11px}.delivera-customer-phone{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;padding:10px;border:1px solid #c7d9ee;border-radius:8px;background:#f7fbff;color:#263238;font-size:12px}.delivera-customer-phone span{color:#66717d;font-size:10px}.delivera-customer-phone strong{font:700 13px 'JetBrains Mono',monospace;overflow-wrap:anywhere;text-align:right}.delivera-package-address{padding:10px;border-radius:8px;background:#eef6ff;color:#263238;font-size:12px}.delivera-package-field{display:grid;gap:5px;margin-top:10px;font-size:11px;font-weight:700}.delivera-package-field select,.delivera-package-field input{width:100%;height:44px;border:1px solid #bfc7d4;border-radius:9px;padding:0 10px;background:#fff}.delivera-package-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.delivera-package-actions button{min-height:44px;border:0;border-radius:9px;font-weight:700}.delivera-package-actions .primary{background:#0061a4;color:#fff}.delivera-package-actions .secondary{background:#e1efff;color:#00497d}.delivera-package-actions .danger{background:#ffdad6;color:#ba1a1a}.delivera-package-actions .success{background:#c8f7d3;color:#006e1c}.delivera-package-contact{display:flex;gap:8px;margin-top:8px}.delivera-package-contact a{flex:1;display:flex;justify-content:center;align-items:center;min-height:40px;border:1px solid #0061a4;border-radius:8px;color:#0061a4;font-weight:700;font-size:12px;text-decoration:none}.delivera-chart-bars{position:absolute;left:28px;right:0;bottom:24px;top:3px;display:flex;align-items:flex-end;justify-content:space-around;gap:8px}.delivera-chart-bar{flex:1;max-width:28px;min-height:3px;border-radius:7px 7px 2px 2px;background:linear-gradient(#2196f3,#0061a4);transition:height .25s ease}.delivera-chart-bar[title="0"]{opacity:.22}
       .delivera-history-date{display:flex;align-items:center;gap:5px;color:#66717d;font-size:11px;margin:8px 0}.delivera-history-details{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}.delivera-history-details>div{padding:9px;border-radius:8px;background:#f1f4f7;min-width:0}.delivera-history-details span{display:block;color:#66717d;font-size:10px;margin-bottom:3px}.delivera-history-details strong{display:block;font-size:12px;overflow-wrap:anywhere}
       .delivera-day-close-summary{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0}.delivera-day-close-summary>div{padding:12px;border-radius:10px;background:#eef6ff}.delivera-day-close-summary span{display:block;color:#66717d;font-size:10px;margin-bottom:5px}.delivera-day-close-summary strong{display:block;color:#191c1e;font:700 14px 'JetBrains Mono',monospace}.delivera-day-close-note{box-sizing:border-box;width:100%;min-height:76px;resize:vertical;margin:8px 0 4px;padding:11px;border:1px solid #bfc7d4;border-radius:9px;background:#fff;font:500 13px Inter,sans-serif}.delivera-day-close-warning{padding:10px 12px;border-radius:9px;background:#fff3cd;color:#755b00;font-size:12px}.delivera-day-close-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}.delivera-day-close-actions button{min-height:48px;border:0;border-radius:9px;font-weight:800}.delivera-day-close-cancel{background:#e8eaed;color:#3f484f}.delivera-day-close-submit{background:#13852d;color:#fff}.delivera-day-close-submit:disabled{opacity:.55}
@@ -508,20 +507,27 @@
   function packageSheet(mode = "active") {
     document.querySelector(".delivera-modal")?.remove();
     const allPackages = activePackages();
+    const poolPackages = Array.isArray(workspace?.poolPackages) ? workspace.poolPackages : [];
     const historyPackages = [...(workspace?.historyPackages || [])].sort((a, b) => packageEventDate(b) - packageEventDate(a));
-    const packages = mode === "history" ? historyPackages : mode === "road"
+    const packages = mode === "pool" ? poolPackages : mode === "history" ? historyPackages : mode === "road"
       ? allPackages.filter((pkg) => ["accepted_by_courier", "on_route", "picked_up"].includes(pkg.status))
       : mode === "offers"
         ? allPackages.filter((pkg) => pkg.status === "assigned")
       : mode === "external"
         ? allPackages.filter((pkg) => !["trendyol", "getir", "yemeksepeti", "migros"].some((source) => String(pkg.sourcePlatform || pkg.platform || pkg.source || "").toLowerCase().includes(source)))
         : allPackages;
-    const title = mode === "history" ? "Geçmiş Siparişler" : mode === "road" ? "Yoldaki Paketler" : mode === "offers" ? "Paket Havuzu" : mode === "external" ? "Sistem Dışı Paketler" : "Aktif Paketler";
+    const title = mode === "pool" ? "Atanmamış Paket Havuzu" : mode === "history" ? "Geçmiş Siparişler" : mode === "road" ? "Yoldaki Paketler" : mode === "offers" ? "Paket Teklifleri" : mode === "external" ? "Sistem Dışı Paketler" : "Aktif Paketler";
     const modal = document.createElement("div");
     modal.className = "delivera-modal";
     modal.innerHTML = `<section class="delivera-sheet"><div class="delivera-sheet-head"><h2>${title}</h2><button class="delivera-close" type="button">×</button></div><div class="delivera-package-list"></div></section>`;
     const list = modal.querySelector(".delivera-package-list");
-    if (!packages.length) list.innerHTML = `<div class="delivera-package"><p>${mode === "history" ? "Henüz tamamlanmış geçmiş sipariş bulunmuyor." : "Bu bölümde paket bulunmuyor."}</p></div>`;
+    const poolAvailableSlots = Math.max(0, Number(workspace?.poolAvailableSlots || 0));
+    if (mode === "pool") {
+      const capacity = Number(workspace?.poolCapacity || 2);
+      const activeLoad = Number(workspace?.courier?.activeLoad || 0);
+      list.innerHTML = `<div class="delivera-package"><p><b>Aktif paket:</b> ${activeLoad}/${capacity}<br>${poolAvailableSlots > 0 ? `Havuzdan ${poolAvailableSlots} paket daha alabilirsiniz.` : "Yeni paket almak için aktif paketlerden birini tamamlayın."}</p></div>`;
+    }
+    if (!packages.length) list.insertAdjacentHTML("beforeend", `<div class="delivera-package"><p>${mode === "history" ? "Henüz tamamlanmış geçmiş sipariş bulunmuyor." : mode === "pool" ? "Şu anda aktif ve atanmamış paket bulunmuyor." : "Bu bölümde paket bulunmuyor."}</p></div>`);
     packages.forEach((pkg) => {
       const card = document.createElement("article");
       card.className = "delivera-package";
@@ -536,7 +542,8 @@
       const failureOptions = `<option value="">Sorun nedeni seç</option><option value="musteri_yok">Müşteri adreste yok</option><option value="adres_bulunamadi">Adres bulunamadı</option><option value="restoran_hazir_degil">Restoran hazır değil</option><option value="teknik_sorun">Teknik sorun</option>${allPackages.length > 1 ? '<option value="ters_yon">Ters yön — yeniden ata</option>' : ""}<option value="diger">Diğer</option>`;
       const status = String(pkg.status || "");
       let controls = "";
-      if (status === "assigned") controls = '<div class="delivera-package-actions"><button class="primary" data-action="accept">Paketi Kabul Et</button><button class="danger" data-action="reject">Paketi Reddet</button></div>';
+      if (mode === "pool") controls = `<div class="delivera-package-actions"><button class="primary" data-action="claim" ${poolAvailableSlots > 0 ? "" : "disabled"}>${poolAvailableSlots > 0 ? "Havuzdan Al" : "Kapasite Dolu"}</button></div>`;
+      else if (status === "assigned") controls = '<div class="delivera-package-actions"><button class="primary" data-action="accept">Paketi Kabul Et</button><button class="danger" data-action="reject">Paketi Reddet</button></div>';
       else if (status === "accepted_by_courier") controls = `<label class="delivera-package-field">Sorun Bildir<select data-failure>${failureOptions}</select></label><div class="delivera-package-actions"><button class="primary" data-action="route">Yola Çık</button><button class="danger" data-action="fail">Sorun Bildir</button></div>`;
       else if (["on_route", "picked_up"].includes(status)) controls = `${paymentOptions ? `<label class="delivera-package-field">Tahsilat Durumu<select data-payment>${paymentOptions}</select></label>` : ""}<label class="delivera-package-field">Teslimat Notu<input data-note placeholder="İsteğe bağlı not"></label><label class="delivera-package-field">Sorun Bildir<select data-failure>${failureOptions}</select></label><div class="delivera-package-actions"><button class="success" data-action="deliver">Teslim Edildi</button><button class="danger" data-action="fail">Sorun Bildir</button></div>`;
       else controls = `<div class="delivera-package-actions"><button class="primary" data-action="accept">Paketi Kabul Et</button></div>`;
@@ -550,7 +557,8 @@
         const button = card.querySelector(`[data-action="${action}"]`);
         if (button) button.disabled = true;
         try {
-          if (action === "reject") workspace = await api(`/api/courier/packages/${encodeURIComponent(pkg.id)}/reject`, { method: "POST", body: "{}" });
+          if (action === "claim") workspace = await api(`/api/courier/pool/${encodeURIComponent(pkg.id)}/claim`, { method: "POST", body: "{}" });
+          else if (action === "reject") workspace = await api(`/api/courier/packages/${encodeURIComponent(pkg.id)}/reject`, { method: "POST", body: "{}" });
           else {
             const payload = action === "accept" ? { status: "accepted_by_courier" }
               : action === "route" ? { status: "on_route" }
@@ -559,7 +567,7 @@
             if (action === "fail" && !payload.failureReason) return toast("Önce sorun nedenini seç.", "error");
             workspace = await api(`/api/courier/packages/${encodeURIComponent(pkg.id)}/status`, { method: "PATCH", body: JSON.stringify(payload) });
           }
-          toast(action === "accept" ? "Paket kabul edildi." : action === "reject" ? "Paket yeniden atama havuzuna gönderildi." : action === "route" ? "Paket yola çıktı." : action === "deliver" ? "Paket teslim edildi." : "Sorun bildirimi kaydedildi.");
+          toast(action === "claim" ? "Paket havuzdan alındı." : action === "accept" ? "Paket kabul edildi." : action === "reject" ? "Paket yeniden atama havuzuna gönderildi." : action === "route" ? "Paket yola çıktı." : action === "deliver" ? "Paket teslim edildi." : "Sorun bildirimi kaydedildi.");
           modal.remove();
           hydrate();
         } catch (error) { toast(error.message, "error"); }
@@ -573,16 +581,37 @@
     document.body.append(modal);
   }
 
-  function restaurantMapPoints(packages = activePackages()) {
+  function validMapCoordinates(latitudeValue, longitudeValue) {
+    if (latitudeValue === null || latitudeValue === undefined || latitudeValue === "" || longitudeValue === null || longitudeValue === undefined || longitudeValue === "") return null;
+    const latitude = Number(latitudeValue);
+    const longitude = Number(longitudeValue);
+    return Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
+      ? { latitude, longitude }
+      : null;
+  }
+
+  function packageMapPoints(packages = activePackages()) {
     const grouped = new Map();
     packages.forEach((pkg) => {
-      const latitude = Number(pkg.restaurantLat ?? pkg.latitude);
-      const longitude = Number(pkg.restaurantLng ?? pkg.longitude);
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-      const key = pkg.restaurantId || `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
+      const customerTarget = ["on_route", "picked_up"].includes(String(pkg.status || ""));
+      const customerCoordinates = validMapCoordinates(pkg.customerLat ?? pkg.customerLatitude, pkg.customerLng ?? pkg.customerLongitude);
+      const restaurantCoordinates = validMapCoordinates(pkg.restaurantLat ?? pkg.latitude, pkg.restaurantLng ?? pkg.longitude);
+      const type = customerTarget && customerCoordinates ? "customer" : "restaurant";
+      const coordinates = type === "customer" ? customerCoordinates : restaurantCoordinates;
+      if (!coordinates) return;
+      const { latitude, longitude } = coordinates;
+      const key = type === "customer"
+        ? `customer:${pkg.id || `${latitude.toFixed(5)},${longitude.toFixed(5)}`}`
+        : `restaurant:${pkg.restaurantId || `${latitude.toFixed(5)},${longitude.toFixed(5)}`}`;
       const current = grouped.get(key);
       if (current) current.packageCount += 1;
-      else grouped.set(key, { latitude, longitude, name: pkg.restaurantName || "Restoran", packageCount: 1 });
+      else grouped.set(key, {
+        latitude,
+        longitude,
+        type,
+        name: type === "customer" ? (pkg.recipient || pkg.customerName || "Müşteri") : (pkg.restaurantName || "Restoran"),
+        packageCount: 1,
+      });
     });
     return [...grouped.values()];
   }
@@ -611,7 +640,7 @@
     };
   }
 
-  function renderMapMarkers(canvas, courierPoint, restaurants, bounds) {
+  function renderMapMarkers(canvas, courierPoint, destinations, bounds) {
     canvas.querySelectorAll(".delivera-map-marker").forEach((marker) => marker.remove());
     const courierPosition = markerPosition(courierPoint, bounds);
     const courierMarker = document.createElement("div");
@@ -620,16 +649,16 @@
     courierMarker.style.left = `${courierPosition.left}%`;
     courierMarker.style.top = `${courierPosition.top}%`;
     canvas.append(courierMarker);
-    restaurants.forEach((restaurant) => {
-      const position = markerPosition(restaurant, bounds);
+    destinations.forEach((destination) => {
+      const position = markerPosition(destination, bounds);
       const marker = document.createElement("button");
       marker.type = "button";
-      marker.className = "delivera-map-marker delivera-restaurant-marker";
+      marker.className = `delivera-map-marker ${destination.type === "customer" ? "delivera-customer-marker" : "delivera-restaurant-marker"}`;
       marker.style.left = `${position.left}%`;
       marker.style.top = `${position.top}%`;
-      marker.title = `${restaurant.name} · ${restaurant.packageCount} paket`;
-      marker.innerHTML = `<span class="material-symbols-outlined notranslate" translate="no">storefront</span><span class="delivera-restaurant-marker-label">${esc(restaurant.name)}${restaurant.packageCount > 1 ? ` (${restaurant.packageCount})` : ""}</span>`;
-      marker.addEventListener("click", packageSheet);
+      marker.title = `${destination.type === "customer" ? "Müşteri" : "Restoran"}: ${destination.name} · ${destination.packageCount} paket`;
+      marker.innerHTML = `<span class="material-symbols-outlined notranslate" translate="no">${destination.type === "customer" ? "location_on" : "storefront"}</span><span class="delivera-restaurant-marker-label">${esc(destination.name)}${destination.packageCount > 1 ? ` (${destination.packageCount})` : ""}</span>`;
+      marker.addEventListener("click", () => packageSheet(destination.type === "customer" ? "road" : "active"));
       canvas.append(marker);
     });
   }
@@ -639,10 +668,10 @@
     const lon = Number(longitude);
     const safeLat = Number.isFinite(lat) ? lat : 41.0082;
     const safeLon = Number.isFinite(lon) ? lon : 28.9784;
-    const restaurants = restaurantMapPoints();
-    const bounds = liveMapBounds(safeLat, safeLon, restaurants);
-    const restaurantKey = restaurants.map((item) => `${item.latitude.toFixed(5)},${item.longitude.toFixed(5)},${item.packageCount}`).join("|");
-    const key = `${safeLat.toFixed(5)},${safeLon.toFixed(5)}|${restaurantKey}`;
+    const destinations = packageMapPoints();
+    const bounds = liveMapBounds(safeLat, safeLon, destinations);
+    const destinationKey = destinations.map((item) => `${item.type},${item.latitude.toFixed(5)},${item.longitude.toFixed(5)},${item.packageCount}`).join("|");
+    const key = `${safeLat.toFixed(5)},${safeLon.toFixed(5)}|${destinationKey}`;
     const canvas = document.querySelector(".map-bg");
     if (!canvas) return;
     canvas.querySelectorAll(":scope > img, :scope > div").forEach((element) => { element.style.display = "none"; });
@@ -659,7 +688,7 @@
       lastMapKey = key;
       frame.src = liveMapUrl(bounds);
     }
-    renderMapMarkers(canvas, { latitude: safeLat, longitude: safeLon }, restaurants, bounds);
+    renderMapMarkers(canvas, { latitude: safeLat, longitude: safeLon }, destinations, bounds);
   }
 
   function loadLeaflet() {
@@ -694,8 +723,8 @@
     const lon = Number(longitude);
     const safeLat = Number.isFinite(lat) ? lat : 41.0082;
     const safeLon = Number.isFinite(lon) ? lon : 28.9784;
-    const restaurants = restaurantMapPoints();
-    const restaurantKey = restaurants.map((item) => `${item.latitude.toFixed(5)},${item.longitude.toFixed(5)},${item.packageCount}`).join("|");
+    const destinations = packageMapPoints();
+    const destinationKey = destinations.map((item) => `${item.type},${item.latitude.toFixed(5)},${item.longitude.toFixed(5)},${item.packageCount}`).join("|");
     const canvas = document.querySelector(".map-bg");
     if (!canvas) return;
     try {
@@ -707,7 +736,6 @@
           maxZoom: 19,
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         }).addTo(leafletMap);
-        leafletMapHasFitted = false;
       }
       const courierLatLng = L.latLng(safeLat, safeLon);
       if (!courierMapMarker) {
@@ -719,24 +747,22 @@
       } else {
         courierMapMarker.setLatLng(courierLatLng);
       }
-      if (restaurantKey !== lastRestaurantMapKey) {
-        restaurantMapMarkers.forEach((marker) => marker.remove());
-        restaurantMapMarkers = restaurants.map((restaurant) => {
-          const count = restaurant.packageCount > 1 ? ` (${restaurant.packageCount})` : "";
-          const marker = L.marker([restaurant.latitude, restaurant.longitude], {
-            title: `${restaurant.name} · ${restaurant.packageCount} paket`,
-            icon: L.divIcon({ className: "delivera-leaflet-restaurant-icon", html: `<span class="delivera-restaurant-dot"><span class="material-symbols-outlined notranslate" translate="no">storefront</span><span class="delivera-restaurant-marker-label">${esc(restaurant.name)}${count}</span></span>`, iconSize: [38, 38], iconAnchor: [19, 19] }),
+      if (destinationKey !== lastDestinationMapKey) {
+        destinationMapMarkers.forEach((marker) => marker.remove());
+        destinationMapMarkers = destinations.map((destination) => {
+          const isCustomer = destination.type === "customer";
+          const count = destination.packageCount > 1 ? ` (${destination.packageCount})` : "";
+          const marker = L.marker([destination.latitude, destination.longitude], {
+            title: `${isCustomer ? "Müşteri" : "Restoran"}: ${destination.name} · ${destination.packageCount} paket`,
+            icon: L.divIcon({ className: isCustomer ? "delivera-leaflet-customer-icon" : "delivera-leaflet-restaurant-icon", html: `<span class="${isCustomer ? "delivera-customer-dot" : "delivera-restaurant-dot"}"><span class="material-symbols-outlined notranslate" translate="no">${isCustomer ? "location_on" : "storefront"}</span><span class="delivera-restaurant-marker-label">${esc(destination.name)}${count}</span></span>`, iconSize: [38, 38], iconAnchor: [19, 19] }),
           }).addTo(leafletMap);
-          marker.on("click", packageSheet);
+          marker.on("click", () => packageSheet(isCustomer ? "road" : "active"));
           return marker;
         });
-        lastRestaurantMapKey = restaurantKey;
-        if (!leafletMapHasFitted) {
-          const points = [courierLatLng, ...restaurants.map((item) => L.latLng(item.latitude, item.longitude))];
-          if (points.length > 1) leafletMap.fitBounds(L.latLngBounds(points), { paddingTopLeft: [55, 150], paddingBottomRight: [150, 150], maxZoom: 16 });
-          else leafletMap.setView(courierLatLng, Math.max(leafletMap.getZoom(), 15));
-          leafletMapHasFitted = true;
-        }
+        lastDestinationMapKey = destinationKey;
+        const points = [courierLatLng, ...destinations.map((item) => L.latLng(item.latitude, item.longitude))];
+        if (points.length > 1) leafletMap.fitBounds(L.latLngBounds(points), { paddingTopLeft: [55, 150], paddingBottomRight: [150, 150], maxZoom: 16 });
+        else leafletMap.setView(courierLatLng, Math.max(leafletMap.getZoom(), 15));
       }
       leafletMap.panInside(courierLatLng, { paddingTopLeft: [75, 145], paddingBottomRight: [150, 145], animate: true });
       requestAnimationFrame(() => leafletMap?.invalidateSize(false));
@@ -900,8 +926,8 @@
     textNodes("Havuz").forEach((label) => {
       const button = label.closest("button");
       const badge = button?.querySelector(".absolute.-top-2");
-      if (badge) badge.textContent = packages.filter((pkg) => pkg.status === "assigned").length;
-      if (button) button.onclick = () => packageSheet("offers");
+      if (badge) badge.textContent = String((workspace.poolPackages || []).length);
+      if (button) button.onclick = () => packageSheet("pool");
     });
     textNodes("Sistem Dışı").forEach((label) => { const button = label.closest("button"); if (button) button.onclick = () => packageSheet("external"); });
     textNodes("Yönetici Ara").forEach((label) => { const button = label.closest("button"); if (button) button.onclick = callManager; });

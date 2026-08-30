@@ -1,4 +1,4 @@
-# Delivera Restoran Windows
+# RESTOMAP Restoran Windows
 
 Canlı restoran panelini açan ve yeni sipariş fişlerini seçilen Windows yazıcısına sessizce gönderen masaüstü uygulamasıdır.
 
@@ -15,8 +15,8 @@ Canlı restoran panelini açan ve yeni sipariş fişlerini seçilen Windows yaz�
 ## İlk kullanım
 
 1. Uygulamayı açın. Bağlı termal yazıcı otomatik bulunur.
-2. Windows sağ alt köşesindeki Delivera simgesine sağ tıklayın.
+2. Windows sağ alt köşesindeki RESTOMAP simgesine sağ tıklayın.
 3. Gerekirse **Yazıcı Seç** ile cihazı bir kez seçin ve **Kağıt** menüsünden 58 mm veya 80 mm belirleyin.
 4. **Test Fişi Yazdır** ile bağlantıyı doğrulayın.
 
-SepetTakip'in yazıcı ayarları değiştirilmez. Yazıcının Windows yazıcı listesinde görünmesi yeterlidir; varsayılan yazıcı yapılması gerekmez.
+RESTOMAP dışındaki uygulamaların yazıcı ayarları değiştirilmez. Yazıcının Windows yazıcı listesinde görünmesi yeterlidir; varsayılan yazıcı yapılması gerekmez.

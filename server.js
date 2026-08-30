@@ -264,6 +264,7 @@ const COURIER_ONLINE_STATUS = "online";
 const COURIER_BUSY_STATUS = "busy";
 const ADMIN_MANUAL_MAX_ACTIVE_PACKAGES = 4;
 const AUTO_SAME_RESTAURANT_MAX_ACTIVE_PACKAGES = 2;
+const COURIER_POOL_MAX_ACTIVE_PACKAGES = 2;
 const AUTOMATIC_ASSIGNMENT_MAX_PACKAGE_AGE_MS = 24 * 60 * 60 * 1000;
 const COURIER_FAILURE_REASONS = new Set([
   "musteri_yok",
@@ -5040,6 +5041,17 @@ function getCourierPackages(courierId, pagination = null) {
   return rows.map((row) => mapPackageRow(row, restaurantMap, platformOrderLookup(row)));
 }
 
+function getCourierPoolPackages(limit = 100) {
+  const rows = db.prepare(`
+    SELECT * FROM packages
+    WHERE assigned_courier_id IS NULL
+      AND status IN (?, ?, ?)
+    ORDER BY datetime(created_at) ASC
+    LIMIT ?
+  `).all(PENDING_STATUS, PREPARING_STATUS, AWAITING_ASSIGNMENT_STATUS, clampLimit(limit));
+  return mapPackageRowsWithRestaurants(rows);
+}
+
 function normalizePhone(value) {
   return trimmed(value).replace(/[^\d]/g, "").replace(/^90(?=5)/, "");
 }
@@ -5575,7 +5587,7 @@ function closeCourierShift(courierId, endedAt = nowIso()) {
 function readinessPayload() {
   const issues = [];
   const warnings = [];
-  const requireRedis = ["1", "true", "yes"].includes(String(process.env.DELIVERA_REQUIRE_REDIS || "").toLowerCase());
+  const requireRedis = ["1", "true", "yes"].includes(String(process.env.RESTOMAP_REQUIRE_REDIS || process.env.DELIVERA_REQUIRE_REDIS || "").toLowerCase());
   let databaseOk = false;
   let databaseMode = "unknown";
   try {
@@ -5825,6 +5837,8 @@ function buildCourierWorkspace(courierId, options = {}) {
 
   const pagination = options.pagination || { limit: DEFAULT_PAGE_LIMIT, offset: 0 };
   const packages = getCourierPackages(courierId, pagination);
+  const activeLoad = packages.filter((item) => isCapacityBlockingPackage(item)).length;
+  const poolPackages = getCourierPoolPackages(100);
   const historyPackages = getCourierHistoryPackages(courierId);
   const deliveredPackages = mapPackageRowsWithRestaurants(db.prepare(`
     SELECT * FROM packages
@@ -5839,9 +5853,12 @@ function buildCourierWorkspace(courierId, options = {}) {
   return {
     courier: {
       ...sanitizeCourier(courier),
-      activeLoad: packages.filter((item) => isCapacityBlockingPackage(item)).length,
+      activeLoad,
     },
     packages,
+    poolPackages,
+    poolCapacity: COURIER_POOL_MAX_ACTIVE_PACKAGES,
+    poolAvailableSlots: Math.max(0, COURIER_POOL_MAX_ACTIVE_PACKAGES - activeLoad),
     historyPackages,
     dayMetrics: {
       reportDate: dayKey(),
@@ -6847,6 +6864,81 @@ function withImmediateTransaction(work) {
     }
     throw error;
   }
+}
+
+function claimCourierPoolPackage(courierId, packageId) {
+  const result = withImmediateTransaction(() => {
+    const courier = db.prepare("SELECT * FROM couriers WHERE id = ?").get(courierId);
+    if (!courier) throw httpError(404, "Kurye bulunamadi.");
+
+    const courierStatus = normalizeCourierStatus(courier.status, Boolean(courier.available));
+    if (!Boolean(courier.available) || ![COURIER_ONLINE_STATUS, COURIER_BUSY_STATUS].includes(courierStatus)) {
+      throw httpError(409, "Havuzdan paket almak icin kurye aktif ve cevrimici olmalidir.");
+    }
+
+    const activeLoad = Number(db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM packages
+      WHERE assigned_courier_id = ?
+        AND status IN (?, ?, ?)
+    `).get(courierId, ASSIGNED_STATUS, ACCEPTED_BY_COURIER_STATUS, ON_ROUTE_STATUS)?.total || 0);
+    if (activeLoad >= COURIER_POOL_MAX_ACTIVE_PACKAGES) {
+      throw httpError(409, `Kurye havuz kapasitesine ulasti (${COURIER_POOL_MAX_ACTIVE_PACKAGES} aktif paket).`);
+    }
+
+    const target = db.prepare("SELECT * FROM packages WHERE id = ?").get(packageId);
+    if (!target) throw httpError(404, "Havuz paketi bulunamadi.");
+    const targetStatus = normalizeStatus(target.status);
+    if (target.assigned_courier_id || ![PENDING_STATUS, PREPARING_STATUS, AWAITING_ASSIGNMENT_STATUS].includes(targetStatus)) {
+      throw httpError(409, "Bu paket artik havuzda degil.");
+    }
+
+    const stamp = nowIso();
+    const courierCoordinates = coordinatesAreValid(courier.x, courier.y) ? { latitude: Number(courier.x), longitude: Number(courier.y) } : null;
+    const restaurantCoordinates = coordinatesAreValid(target.x, target.y) ? { latitude: Number(target.x), longitude: Number(target.y) } : null;
+    const distanceKm = courierCoordinates && restaurantCoordinates
+      ? Number(distance(courierCoordinates.latitude, courierCoordinates.longitude, restaurantCoordinates.latitude, restaurantCoordinates.longitude).toFixed(2))
+      : null;
+    const update = db.prepare(`
+      UPDATE packages
+      SET status = ?, assignment_status = 'assigned', assigned_courier_id = ?, assigned_courier_name = ?,
+          assigned_at = ?, accepted_at = ?, on_route_at = NULL, delivered_at = NULL, failed_at = NULL,
+          distance_km = ?, failure_reason = NULL, assignment_reason = ?, last_assignment_attempt_at = ?,
+          last_assignment_error = '', updated_at = ?
+      WHERE id = ?
+        AND assigned_courier_id IS NULL
+        AND status IN (?, ?, ?)
+    `).run(
+      ACCEPTED_BY_COURIER_STATUS,
+      courier.id,
+      courier.name,
+      stamp,
+      stamp,
+      distanceKm,
+      `Kurye havuzdan kendisi aldi (${activeLoad + 1}/${COURIER_POOL_MAX_ACTIVE_PACKAGES}).`,
+      stamp,
+      stamp,
+      packageId,
+      PENDING_STATUS,
+      PREPARING_STATUS,
+      AWAITING_ASSIGNMENT_STATUS
+    );
+    if (Number(update?.changes || 0) !== 1) {
+      throw httpError(409, "Paket baska bir kurye tarafindan alindi.");
+    }
+
+    db.prepare("UPDATE couriers SET status = ? WHERE id = ?").run(COURIER_BUSY_STATUS, courier.id);
+    appendTriedCourier(packageId, courier.id);
+    return { target, courier, activeLoad: activeLoad + 1 };
+  });
+
+  clearAssignmentRetry(packageId);
+  const claimedPackage = getPackageById(packageId);
+  enqueuePosentegraStatusChange(claimedPackage, ACCEPTED_BY_COURIER_STATUS);
+  if (isPlatformBackedPackage(result.target)) {
+    notifyPlatformOrderAssigned(result.target.source_platform, result.target.external_order_id || result.target.external_order_no, result.courier.id, claimedPackage);
+  }
+  return { ...result, claimedPackage };
 }
 
 function isAssignableOrderStatus(status) {
@@ -15757,6 +15849,47 @@ async function handleApi(req, res, pathname) {
       message: `${courier?.name || "Kurye"} ${acceptedPlan?.planDate || ""} vardiya planini kabul etti.`,
     });
     sendJson(res, 200, workspace || { courier: null, packages: [] });
+    return;
+  }
+
+  const courierPoolClaimMatch = pathname.match(/^\/api\/courier\/pool\/([^/]+)\/claim$/);
+  if (req.method === "POST" && courierPoolClaimMatch) {
+    const session = getCourierSession(req);
+    if (!session) {
+      sendJson(res, 401, { error: "Oturum bulunamadi." });
+      return;
+    }
+
+    const retryAfter = await applyRateLimit(req, "courierStatus", RATE_LIMITS.courierStatus);
+    if (retryAfter !== null) {
+      res.setHeader("Retry-After", String(retryAfter));
+      sendJson(res, 429, { error: "Havuzdan paket alma limiti asildi." });
+      return;
+    }
+
+    const packageId = courierPoolClaimMatch[1];
+    const claimed = claimCourierPoolPackage(session.courier_id, packageId);
+    writeAuditLog({
+      actorRole: "courier",
+      actorId: session.courier_id,
+      action: "courier_pool_package_claimed",
+      packageId,
+      restaurantId: claimed.target.restaurant_id,
+      details: {
+        from: normalizeStatus(claimed.target.status),
+        to: ACCEPTED_BY_COURIER_STATUS,
+        activeLoad: claimed.activeLoad,
+        capacity: COURIER_POOL_MAX_ACTIVE_PACKAGES,
+      },
+    });
+    broadcastLiveEvent({
+      type: "package-assigned",
+      courierId: session.courier_id,
+      restaurantId: claimed.target.restaurant_id,
+      packageId,
+      message: `${claimed.target.tracking_no || packageId} paketi kurye tarafindan havuzdan alindi.`,
+    });
+    sendJson(res, 200, buildCourierWorkspace(session.courier_id) || { courier: null, packages: [], poolPackages: [] });
     return;
   }
 

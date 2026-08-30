@@ -3,8 +3,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { applyPaperSize, normalizePaperSize, printerLabel, selectPrinter } = require("./printer-service");
 
-const PANEL_URL = "https://deliveraexpres.com.tr/restaurant.html";
-const ALLOWED_ORIGIN = "https://deliveraexpres.com.tr";
+const PANEL_URL = "https://restomap.onrender.com/restaurant.html";
+const ALLOWED_ORIGINS = new Set([
+  "https://restomap.onrender.com",
+  "https://restomap.com.tr",
+  "https://www.restomap.com.tr",
+]);
 const PRINT_HISTORY_LIMIT = 2000;
 let mainWindow;
 let tray;
@@ -114,12 +118,22 @@ function retryPendingPrints() {
 function notify(title, body) {
   if (!Notification.isSupported()) return;
   new Notification({
-    title: String(title || "Delivera Restoran"),
+    title: String(title || "RESTOMAP Restoran"),
     body: String(body || "Yeni sipariş geldi."),
     silent: false,
     timeoutType: "never",
-    icon: path.join(__dirname, "assets", "delivera.png"),
+    icon: path.join(__dirname, "assets", "restomap.png"),
   }).show();
+}
+
+function visibleInkPixels(image) {
+  if (!image || image.isEmpty()) return 0;
+  const bitmap = image.toBitmap();
+  let count = 0;
+  for (let index = 0; index < bitmap.length; index += 4) {
+    if (bitmap[index] < 225 || bitmap[index + 1] < 225 || bitmap[index + 2] < 225) count += 1;
+  }
+  return count;
 }
 
 async function silentPrint(payload) {
@@ -134,13 +148,13 @@ async function silentPrint(payload) {
     try {
       selected = await resolvePrinter();
     } catch (error) {
-      notify("Fiş yazıcısı bulunamadı", `${error.message}. Delivera simgesine sağ tıklayıp Yazıcı Seç'i kullanın.`);
+      notify("Fiş yazıcısı bulunamadı", `${error.message}. RESTOMAP simgesine sağ tıklayıp Yazıcı Seç'i kullanın.`);
       reject(error);
       return;
     }
     const printWindow = new BrowserWindow({
       show: false,
-      webPreferences: { sandbox: true, contextIsolation: true, javascript: false },
+      webPreferences: { sandbox: true, contextIsolation: true, javascript: false, backgroundThrottling: false },
     });
     let finished = false;
     const finish = (error, result = { ok: true, duplicate: false }) => {
@@ -149,12 +163,27 @@ async function silentPrint(payload) {
       if (!printWindow.isDestroyed()) printWindow.destroy();
       if (error) reject(error); else resolve(result);
     };
-    printWindow.webContents.once("did-finish-load", () => {
+    printWindow.webContents.once("did-finish-load", async () => {
       const printTimeout = setTimeout(() => finish(new Error("Yazdırma zaman aşımına uğradı")), 20000);
+      try {
+        await new Promise((ready) => setTimeout(ready, 350));
+        const preview = await printWindow.webContents.capturePage();
+        if (visibleInkPixels(preview) < 200) {
+          clearTimeout(printTimeout);
+          finish(new Error("Fiş önizlemesi boş; baskı kuyruğunda yeniden denenecek"));
+          return;
+        }
+        if (finished) return;
+      } catch (error) {
+        clearTimeout(printTimeout);
+        finish(error);
+        return;
+      }
       printWindow.webContents.print({
         silent: true,
         printBackground: true,
         deviceName: selected.printer.name,
+        margins: { marginType: "none" },
       }, (success, failureReason) => {
         clearTimeout(printTimeout);
         if (finished) return;
@@ -188,13 +217,13 @@ function createWindow() {
     minHeight: 720,
     show: false,
     autoHideMenuBar: true,
-    icon: path.join(__dirname, "assets", "delivera.ico"),
+    icon: path.join(__dirname, "assets", "restomap.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      partition: "persist:delivera-restaurant",
+      partition: "persist:restomap-restaurant",
       backgroundThrottling: false,
     },
   });
@@ -203,10 +232,10 @@ function createWindow() {
     if (quitting) return;
     event.preventDefault();
     mainWindow.hide();
-    notify("Delivera arka planda çalışıyor", "Yeni siparişler izlenmeye ve otomatik yazdırılmaya devam edecek.");
+    notify("RESTOMAP arka planda çalışıyor", "Yeni siparişler izlenmeye ve otomatik yazdırılmaya devam edecek.");
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(ALLOWED_ORIGIN)) return { action: "allow" };
+    if (isAllowedUrl(url)) return { action: "allow" };
     shell.openExternal(url).catch(() => {});
     return { action: "deny" };
   });
@@ -214,7 +243,7 @@ function createWindow() {
     callback(["notifications", "geolocation"].includes(permission));
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (!url.startsWith(ALLOWED_ORIGIN)) {
+    if (!isAllowedUrl(url)) {
       event.preventDefault();
       shell.openExternal(url).catch(() => {});
     }
@@ -236,8 +265,8 @@ function createWindow() {
 }
 
 function createTray() {
-  tray = new Tray(nativeImage.createFromPath(path.join(__dirname, "assets", "delivera.ico")));
-  tray.setToolTip("Delivera Restoran");
+  tray = new Tray(nativeImage.createFromPath(path.join(__dirname, "assets", "restomap.ico")));
+  tray.setToolTip("RESTOMAP Restoran");
   refreshTrayMenu();
   tray.on("double-click", () => { mainWindow.show(); mainWindow.focus(); });
 }
@@ -287,7 +316,7 @@ async function choosePrinter() {
   const cancelId = printers.length;
   const result = await dialog.showMessageBox(mainWindow, {
     type: "question",
-    title: "Delivera Fiş Yazıcısı",
+    title: "RESTOMAP Fiş Yazıcısı",
     message: "Fişlerin otomatik gönderileceği yazıcıyı seçin",
     detail: "Bu seçim bu bilgisayarda saklanır. SepetTakip'in ayarları değişmez.",
     buttons: [...printers.map(printerLabel), "İptal"],
@@ -315,8 +344,16 @@ function printTestReceipt() {
     .catch((error) => notify("Test fişi başarısız", error.message));
 }
 
+function isAllowedUrl(value) {
+  try {
+    return ALLOWED_ORIGINS.has(new URL(String(value || "")).origin);
+  } catch {
+    return false;
+  }
+}
+
 function isTrustedRenderer(event) {
-  return String(event.senderFrame?.url || "").startsWith(ALLOWED_ORIGIN);
+  return isAllowedUrl(event.senderFrame?.url);
 }
 
 ipcMain.handle("delivera:auto-print-receipt", (event, payload) => {
@@ -334,7 +371,7 @@ if (!gotLock) app.quit();
 else {
   app.on("second-instance", () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } });
   app.whenReady().then(() => {
-    app.setAppUserModelId("tr.com.deliveraexpres.restaurant");
+    app.setAppUserModelId("tr.com.restomap.restaurant");
     app.setLoginItemSettings({ openAtLogin: true, path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath });
     createWindow();
     createTray();
