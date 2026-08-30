@@ -5789,11 +5789,14 @@ function publicMapsConfig() {
 
 const geocodeCache = new Map();
 
-async function geocodeDeliveryAddress(address) {
+async function geocodeDeliveryAddress(address, proximity = null) {
   const normalizedAddress = trimmed(address);
   if (!normalizedAddress) return null;
 
-  const cacheKey = normalizedAddress.toLocaleLowerCase("tr-TR");
+  const proximityLatitude = Number(proximity?.latitude);
+  const proximityLongitude = Number(proximity?.longitude);
+  const hasProximity = coordinatesAreValid(proximityLatitude, proximityLongitude);
+  const cacheKey = `${normalizedAddress.toLocaleLowerCase("tr-TR")}|${hasProximity ? `${proximityLatitude.toFixed(3)},${proximityLongitude.toFixed(3)}` : ""}`;
   if (geocodeCache.has(cacheKey)) return geocodeCache.get(cacheKey);
 
   const controller = new AbortController();
@@ -5802,8 +5805,20 @@ async function geocodeDeliveryAddress(address) {
     const endpoint = trimmed(process.env.GEOCODING_API_URL) || "https://nominatim.openstreetmap.org/search";
     const url = new URL(endpoint);
     url.searchParams.set("format", "jsonv2");
-    url.searchParams.set("limit", "1");
+    url.searchParams.set("limit", hasProximity ? "5" : "1");
     url.searchParams.set("countrycodes", trimmed(process.env.GEOCODING_COUNTRY_CODES) || "tr");
+    url.searchParams.set("accept-language", "tr");
+    if (hasProximity) {
+      const latitudeWindow = 0.45;
+      const longitudeWindow = 0.55;
+      url.searchParams.set("viewbox", [
+        proximityLongitude - longitudeWindow,
+        proximityLatitude + latitudeWindow,
+        proximityLongitude + longitudeWindow,
+        proximityLatitude - latitudeWindow,
+      ].join(","));
+      url.searchParams.set("bounded", "0");
+    }
     url.searchParams.set("q", normalizedAddress);
     const response = await fetch(url, {
       signal: controller.signal,
@@ -5814,9 +5829,15 @@ async function geocodeDeliveryAddress(address) {
     });
     if (!response.ok) return null;
     const results = await response.json();
-    const latitude = Number(results?.[0]?.lat);
-    const longitude = Number(results?.[0]?.lon);
-    const result = coordinatesAreValid(latitude, longitude) ? { latitude, longitude } : null;
+    const validResults = (Array.isArray(results) ? results : [])
+      .map((item) => ({ latitude: Number(item?.lat), longitude: Number(item?.lon) }))
+      .filter((item) => coordinatesAreValid(item.latitude, item.longitude));
+    const result = hasProximity
+      ? validResults.sort((left, right) =>
+        distance(proximityLatitude, proximityLongitude, left.latitude, left.longitude) -
+        distance(proximityLatitude, proximityLongitude, right.latitude, right.longitude)
+      )[0] || null
+      : validResults[0] || null;
     if (result) geocodeCache.set(cacheKey, result);
     return result;
   } catch (error) {
@@ -8431,6 +8452,68 @@ async function syncPosentegraInboundStatuses() {
   } finally {
     posentegraInboundSyncRunning = false;
   }
+}
+
+function appendMissingAddressParts(baseAddress, parts) {
+  const result = trimmed(baseAddress);
+  if (!result) return "";
+  const normalizedResult = result.toLocaleLowerCase("tr-TR");
+  const missingParts = parts
+    .map((part) => trimmed(part))
+    .filter(Boolean)
+    .filter((part, index, all) => all.findIndex((candidate) => candidate.toLocaleLowerCase("tr-TR") === part.toLocaleLowerCase("tr-TR")) === index)
+    .filter((part) => !normalizedResult.includes(part.toLocaleLowerCase("tr-TR")));
+  return [result, ...missingParts].join(", ");
+}
+
+function packageDeliveryAddressCandidates(pkg) {
+  const defaultCity = trimmed(process.env.RESTOMAP_DEFAULT_CITY || process.env.GEOCODING_DEFAULT_CITY) || "Mersin";
+  const defaultCountry = trimmed(process.env.RESTOMAP_DEFAULT_COUNTRY || process.env.GEOCODING_DEFAULT_COUNTRY) || "Türkiye";
+  const address = trimmed(pkg.customer_address || pkg.delivery_address || pkg.address);
+  const structuredAddress = [
+    trimmed(pkg.street),
+    trimmed(pkg.building_no) ? `No ${trimmed(pkg.building_no)}` : "",
+    trimmed(pkg.floor) ? `Kat ${trimmed(pkg.floor)}` : "",
+    trimmed(pkg.door_no) ? `Daire ${trimmed(pkg.door_no)}` : "",
+  ].filter(Boolean).join(", ");
+  const district = trimmed(pkg.district || pkg.zone);
+  const city = trimmed(pkg.city) || defaultCity;
+  const bases = [structuredAddress, address].filter(Boolean);
+  const candidates = [];
+  for (const base of bases) {
+    candidates.push(appendMissingAddressParts(base, [district, city, defaultCountry]));
+    candidates.push(appendMissingAddressParts(base, [city, defaultCountry]));
+    candidates.push(appendMissingAddressParts(base, [district, defaultCountry]));
+    candidates.push(appendMissingAddressParts(base, [defaultCountry]));
+  }
+  return candidates.filter(Boolean).filter((candidate, index, all) =>
+    all.findIndex((item) => item.toLocaleLowerCase("tr-TR") === candidate.toLocaleLowerCase("tr-TR")) === index
+  );
+}
+
+async function resolvePackageCustomerCoordinates(pkg) {
+  const savedLatitude = Number(pkg.customer_lat);
+  const savedLongitude = Number(pkg.customer_lng);
+  const hasSavedCoordinates = pkg.customer_lat !== null && pkg.customer_lat !== "" &&
+    pkg.customer_lng !== null && pkg.customer_lng !== "" &&
+    coordinatesAreValid(savedLatitude, savedLongitude);
+  if (hasSavedCoordinates) {
+    return { latitude: savedLatitude, longitude: savedLongitude, cached: true };
+  }
+
+  const restaurantLatitude = Number(pkg.x);
+  const restaurantLongitude = Number(pkg.y);
+  const proximity = coordinatesAreValid(restaurantLatitude, restaurantLongitude)
+    ? { latitude: restaurantLatitude, longitude: restaurantLongitude }
+    : null;
+  for (const candidate of packageDeliveryAddressCandidates(pkg)) {
+    const coordinates = await geocodeDeliveryAddress(candidate, proximity);
+    if (!coordinates) continue;
+    db.prepare("UPDATE packages SET customer_lat = ?, customer_lng = ?, updated_at = ? WHERE id = ?")
+      .run(coordinates.latitude, coordinates.longitude, nowIso(), pkg.id);
+    return { ...coordinates, cached: false, query: candidate };
+  }
+  return null;
 }
 
 function enqueuePosentegraRestaurantDecision(packageRow, action, reason, req) {
@@ -15563,32 +15646,21 @@ async function handleApi(req, res, pathname) {
       return;
     }
 
-    const hasSavedCoordinates = target.customer_lat !== null && target.customer_lat !== "" &&
-      target.customer_lng !== null && target.customer_lng !== "";
-    const savedLatitude = Number(target.customer_lat);
-    const savedLongitude = Number(target.customer_lng);
-    if (hasSavedCoordinates && coordinatesAreValid(savedLatitude, savedLongitude)) {
-      sendJson(res, 200, { latitude: savedLatitude, longitude: savedLongitude, cached: true });
-      return;
-    }
-
-    const address = trimmed(target.customer_address || target.delivery_address || target.address);
-    const addressWithContext = [address, trimmed(target.zone), "Türkiye"].filter(Boolean).join(", ");
-    const coordinates = await geocodeDeliveryAddress(addressWithContext);
+    const coordinates = await resolvePackageCustomerCoordinates(target);
     if (!coordinates) {
-      sendJson(res, 422, { error: "Adres haritada bulunamadi. Ilce ve sehir bilgisini de ekleyin." });
+      sendJson(res, 422, { error: "Musteri adresi otomatik olarak haritada bulunamadi. Sokak ve bina numarasi bilgisini kontrol edin." });
       return;
     }
 
-    db.prepare("UPDATE packages SET customer_lat = ?, customer_lng = ?, updated_at = ? WHERE id = ?")
-      .run(coordinates.latitude, coordinates.longitude, nowIso(), target.id);
-    broadcastLiveEvent({
-      type: "package-location-resolved",
-      restaurantId: target.restaurant_id,
-      courierId: session.courier_id,
-      message: "Teslimat adresi haritada bulundu.",
-    });
-    sendJson(res, 200, { ...coordinates, cached: false });
+    if (!coordinates.cached) {
+      broadcastLiveEvent({
+        type: "package-location-resolved",
+        restaurantId: target.restaurant_id,
+        courierId: session.courier_id,
+        message: "Teslimat adresi haritada bulundu.",
+      });
+    }
+    sendJson(res, 200, coordinates);
     return;
   }
 
@@ -16016,6 +16088,25 @@ async function handleApi(req, res, pathname) {
         allowedFailureReasons: [...COURIER_FAILURE_REASONS],
       });
       return;
+    }
+
+    if (nextStatus === ON_ROUTE_STATUS) {
+      const coordinates = await resolvePackageCustomerCoordinates(target);
+      if (!coordinates) {
+        sendJson(res, 422, {
+          error: "Yola cikis baslatilamadi: musteri adresi haritada bulunamadi. Sokak ve bina numarasi bilgisini kontrol edin.",
+        });
+        return;
+      }
+      if (!coordinates.cached) {
+        broadcastLiveEvent({
+          type: "package-location-resolved",
+          restaurantId: target.restaurant_id,
+          courierId: session.courier_id,
+          packageId,
+          message: "Musteri konumu otomatik olarak haritada bulundu.",
+        });
+      }
     }
 
     const courierSelectablePaymentMethods = ["cash_on_delivery", "card_on_delivery", "restaurant_collected"];

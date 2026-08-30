@@ -521,6 +521,14 @@ test("panel create/update/delete flows persist to database tables", { timeout: 3
       "accepted_by_courier"
     );
 
+    runSql(
+      dbFile,
+      "UPDATE packages SET customer_lat = ?, customer_lng = ? WHERE id = ?",
+      36.801,
+      34.621,
+      packageState.createdPackage.id
+    );
+
     await request(baseUrl, `/api/courier/packages/${packageState.createdPackage.id}/status`, {
       method: "PATCH",
       headers: lifecycleCourierHeaders,

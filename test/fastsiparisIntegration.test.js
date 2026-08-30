@@ -324,6 +324,13 @@ test("all supported platform deliveries sync through Posentegra ids", { timeout:
       headers: { Authorization: `Bearer ${courierLogin.token}` },
       body: JSON.stringify({ status: "accepted_by_courier" }),
     });
+    runSql(
+      dbFile,
+      "UPDATE packages SET customer_lat = ?, customer_lng = ? WHERE id = ?",
+      36.802,
+      34.622,
+      webhookOrder.package.id
+    );
     await request(baseUrl, `/api/courier/packages/${webhookOrder.package.id}/status`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${courierLogin.token}` },
@@ -390,9 +397,11 @@ test("all supported platform deliveries sync through Posentegra ids", { timeout:
       assert.equal(platformOrder.matched, true);
       runSql(
         dbFile,
-        "UPDATE packages SET status = 'assigned', assignment_status = 'assigned', assigned_courier_id = ?, assigned_courier_name = ?, assigned_at = datetime('now') WHERE id = ?",
+        "UPDATE packages SET status = 'assigned', assignment_status = 'assigned', assigned_courier_id = ?, assigned_courier_name = ?, assigned_at = datetime('now'), customer_lat = ?, customer_lng = ? WHERE id = ?",
         courierState.createdCourier.id,
         courierState.createdCourier.name,
+        36.803,
+        34.623,
         platformOrder.package.id
       );
       for (const status of ["accepted_by_courier", "on_route", "delivered"]) {

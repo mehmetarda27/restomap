@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
@@ -41,9 +42,18 @@ test("courier design flow accepts, routes, delivers and records a break", { time
   const dbFile = path.join(tempDir, "delivera.sqlite");
   const port = 48000 + Math.floor(Math.random() * 1000);
   const baseUrl = `http://127.0.0.1:${port}`;
+  const geocodeQueries = [];
+  const geocoder = http.createServer((req, res) => {
+    const url = new URL(req.url, "http://127.0.0.1");
+    geocodeQueries.push(url.searchParams.get("q"));
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify([{ lat: "36.8001", lon: "34.6202" }]));
+  });
+  await new Promise((resolve) => geocoder.listen(0, "127.0.0.1", resolve));
+  const geocoderPort = geocoder.address().port;
   const server = spawn(process.execPath, ["server.js"], {
     cwd: path.join(__dirname, ".."),
-    env: { ...process.env, PORT: String(port), NODE_ENV: "test", DATABASE_URL: "", POSTGRES_URL: "", DATABASE_PATH: dbFile, DB_PATH: dbFile, DELIVERA_DB_FILE: dbFile, DELIVERA_ASSIGNMENT_RETRY_MS: "60000", DELIVERA_COURIER_OFFER_TIMEOUT_MS: "60000" },
+    env: { ...process.env, PORT: String(port), NODE_ENV: "test", DATABASE_URL: "", POSTGRES_URL: "", DATABASE_PATH: dbFile, DB_PATH: dbFile, DELIVERA_DB_FILE: dbFile, DELIVERA_ASSIGNMENT_RETRY_MS: "60000", DELIVERA_COURIER_OFFER_TIMEOUT_MS: "60000", GEOCODING_API_URL: `http://127.0.0.1:${geocoderPort}/search`, RESTOMAP_DEFAULT_CITY: "Mersin" },
     stdio: ["ignore", "ignore", "pipe"],
   });
   server.stderr.on("data", (chunk) => process.stderr.write(chunk));
@@ -76,7 +86,13 @@ test("courier design flow accepts, routes, delivers and records a break", { time
     assert.equal(breakWhileActive.status, 409);
 
     workspace = await request(baseUrl, "/api/courier/packages/pkg_flow/status", "token-flow", { method: "PATCH", body: JSON.stringify({ status: "on_route" }) });
-    assert.equal(workspace.packages.find((pkg) => pkg.id === "pkg_flow").status, "on_route");
+    const routedPackage = workspace.packages.find((pkg) => pkg.id === "pkg_flow");
+    assert.equal(routedPackage.status, "on_route");
+    assert.equal(routedPackage.customerLat, 36.8001);
+    assert.equal(routedPackage.customerLng, 34.6202);
+    assert.match(geocodeQueries[0], /Test adresi/i);
+    assert.match(geocodeQueries[0], /Akdeniz/i);
+    assert.match(geocodeQueries[0], /Mersin/i);
 
     const prematureDayClose = await fetch(`${baseUrl}/api/courier/day-close`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer token-flow" }, body: "{}" });
     assert.equal(prematureDayClose.status, 409);
@@ -135,6 +151,7 @@ test("courier design flow accepts, routes, delivers and records a break", { time
     verificationDb.close();
   } finally {
     await stopServer(server);
+    await new Promise((resolve) => geocoder.close(resolve));
     for (let attempt = 0; attempt < 8; attempt += 1) {
       try { fs.rmSync(tempDir, { recursive: true, force: true }); break; }
       catch (error) {
