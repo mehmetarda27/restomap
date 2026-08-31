@@ -59,6 +59,11 @@ test("new restaurant design filters closed orders and subscribes to named live e
     dom.window.eval(fs.readFileSync(path.join(rootDir, "restaurant-design-bridge.js"), "utf8"));
     await new Promise((resolve) => dom.window.setTimeout(resolve, 30));
 
+    const ordersTable = dom.window.document.querySelector("#restaurantOrders")?.closest("table");
+    assert.ok(ordersTable?.classList.contains("zg-orders-table"));
+    assert.ok(ordersTable?.parentElement?.classList.contains("zg-orders-card"));
+    assert.match(dom.window.document.head.textContent, /\.zg-orders-table\{[^}]*table-layout:fixed/);
+
     const hooks = dom.window.__restaurantDesignTest;
     assert.equal(hooks.platformKey("ty"), "trendyol");
     assert.equal(hooks.platformKey("Trendyol Yemek"), "trendyol");

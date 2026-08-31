@@ -261,6 +261,13 @@
       .zg-source-yemeksepeti{color:#b91c1c;background:#fef2f2;border-color:#fecaca}.zg-source-getir{color:#5b21b6;background:#f5f3ff;border-color:#ddd6fe}
       .zg-source-migros{color:#c2410c;background:#fff7ed;border-color:#fed7aa}.zg-source-trendyol{color:#c2410c;background:#fff7ed;border-color:#fdba74}
       .zg-source-manual{color:#334155;background:#f1f5f9;border-color:#cbd5e1}
+      #restaurantContent{min-width:0;max-width:100%;overflow-x:hidden}
+      .zg-orders-card{width:100%;max-width:100%;min-width:0;overflow:hidden}
+      .zg-orders-table{width:100%!important;min-width:0!important;max-width:100%;table-layout:fixed}
+      .zg-orders-table th,.zg-orders-table td{min-width:0;overflow:hidden;padding-left:10px!important;padding-right:10px!important}
+      .zg-orders-table th:nth-child(1){width:15%}.zg-orders-table th:nth-child(2){width:25%}.zg-orders-table th:nth-child(3){width:9%}.zg-orders-table th:nth-child(4){width:8%}.zg-orders-table th:nth-child(5){width:11%}.zg-orders-table th:nth-child(6){width:13%}.zg-orders-table th:nth-child(7){width:15%}.zg-orders-table th:nth-child(8){width:4%}
+      .zg-orders-table td>*{min-width:0;max-width:100%}
+      .zg-orders-table td:nth-child(1) .font-bold,.zg-orders-table td:nth-child(2)>div>span:first-child,.zg-orders-table td:nth-child(6)>span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .zg-order-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:5px;width:168px;max-width:100%;min-width:0}
       .zg-order-action{min-height:32px;min-width:0;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:3px;padding:5px 6px;border:1px solid transparent;border-radius:6px;font-size:10px;font-weight:700;line-height:1.05;white-space:normal;text-align:center;transition:background-color .15s,border-color .15s,transform .15s}
       .zg-order-action:hover{transform:translateY(-1px)}.zg-order-action i{display:none}.zg-order-action-print{color:#334155;background:#f1f5f9;border-color:#cbd5e1}.zg-order-action-time{color:#a16207;background:#fef3c7;border-color:#fcd34d}.zg-order-action-invoice{color:#7e22ce;background:#f3e8ff;border-color:#d8b4fe}
@@ -278,6 +285,10 @@
     const content = main?.querySelector(":scope > div.flex-1.overflow-auto");
     const tbody = content?.querySelector("tbody");
     if (content) content.id = "restaurantContent";
+    const ordersTable = tbody?.closest("table");
+    const ordersCard = ordersTable?.parentElement;
+    ordersTable?.classList.add("zg-orders-table");
+    ordersCard?.classList.add("zg-orders-card");
     if (tbody) {
       tbody.id = "restaurantOrders";
       tbody.innerHTML = '<tr><td colspan="8" class="zg-empty"><i class="ph ph-circle-notch ph-spin text-3xl block mb-2"></i>Siparişler yükleniyor...</td></tr>';
