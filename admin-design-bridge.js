@@ -151,7 +151,15 @@
       rangeReportLink.innerHTML = '<span class="material-symbols-outlined mr-3 text-[20px]">date_range</span><span class="text-body-sm font-body-sm">İşletme Tarih Aralığı</span>';
       dailyReportLink.after(rangeReportLink);
     }
-    const sidebarLinks = [...document.querySelectorAll("aside nav a")];
+    const creditCard = [...document.querySelectorAll("aside .bg-surface-container")].find((item) => normalize(item.textContent).includes("kontör"));
+    const creditCount = creditCard?.querySelector(".text-green-600") || null;
+    if (creditCard) {
+      creditCard.setAttribute("role", "button");
+      creditCard.setAttribute("aria-label", "Kontör İşlemleri");
+      creditCard.tabIndex = 0;
+      creditCard.classList.add("cursor-pointer", "hover:bg-primary-fixed", "transition-colors");
+    }
+    const sidebarLinks = [...document.querySelectorAll("aside nav a"), ...(creditCard ? [creditCard] : [])];
     sidebarLinks.forEach((link) => {
       const label = link.querySelector("span:not(.material-symbols-outlined)")?.textContent || link.textContent;
       link.dataset.route = normalize(label);
@@ -169,7 +177,7 @@
     logoutButton.className = "da-logout";
     logoutButton.textContent = "Güvenli Çıkış";
     sidebarFooter?.appendChild(logoutButton);
-    return { main, header, tableCard, tableHead, tableBody, filterButtons, addOrderButton, notificationButton, sidebarLinks, logoutButton, unmatchedWorkspace, unmatchedMenuBadge };
+    return { main, header, tableCard, tableHead, tableBody, filterButtons, addOrderButton, notificationButton, sidebarLinks, logoutButton, unmatchedWorkspace, unmatchedMenuBadge, creditCount };
   }
 
   const refs = injectShell();
@@ -296,8 +304,11 @@
     const count = (state.data.notifications || []).length; badge.textContent = count; badge.hidden = count === 0;
     const unmatchedCount = unmatchedOrders().filter((order) => !order.isResolved).length;
     if (refs.unmatchedMenuBadge) refs.unmatchedMenuBadge.textContent = String(unmatchedCount);
-    const credit = document.querySelector("aside .bg-surface-container .text-green-600");
-    if (credit) credit.textContent = String(state.data.stats?.totalPackages || 0);
+    const creditRecords = (state.data?.managementRecords || []).filter((item) => item.recordType === "credit_package" && item.status !== "completed");
+    if (refs.creditCount) {
+      refs.creditCount.textContent = String(creditRecords.length);
+      refs.creditCount.title = `${creditRecords.length} aktif paket/kontör işlemi`;
+    }
   }
 
   function hydrate(data) {
@@ -409,13 +420,17 @@
     }).join("")}<div class="da-operation-couriers"><b>Aktif kurye: ${data.activeCouriers.length}</b><br>${data.activeCouriers.length ? data.activeCouriers.map((courier) => esc(courier.name)).join(", ") : "Şu anda aktif kurye yok."}</div>`;
   }
 
-  async function showMap(focusPackage = null) {
+  async function showMap(focusPackage = null, options = {}) {
     await ensureLeaflet();
+    const courierOnly = options.mode === "couriers";
+    const projectData = (source) => courierOnly ? { ...source, restaurants: [], mappedRestaurants: [], missingRestaurantLocations: [] } : source;
     let data = operationMapData(focusPackage);
     try { data = normalizeOperationMapData(await api("/api/admin/operation-map"), focusPackage); }
     catch (error) { toast(`Canlı harita verisi yenilenemedi; son kayıtlar gösteriliyor. ${error.message}`, "error"); }
-    const legend = '<div class="da-map-legend"><span><i style="background:#16a34a"></i>Paketsiz işletme</span><span><i style="background:#f97316"></i>Aktif paketli işletme</span><span><i style="background:#dc2626"></i>Bekleyen paketli işletme</span><span><i style="background:#2563eb"></i>Aktif kurye</span><span><i style="background:#7c3aed"></i>Teslimat</span></div>';
-    modal(focusPackage ? `Paket Haritası · ${focusPackage.trackingNo || focusPackage.id}` : "Canlı Operasyon Haritası", `<div class="da-map-summary" data-map-summary>${operationMapSummary(data)}</div><div class="da-operation-layout"><div id="daMap" class="da-map"></div><aside class="da-operation-list" data-map-restaurants>${operationRestaurantList(data)}</aside></div>${legend}`, (root) => {
+    data = projectData(data);
+    const legend = courierOnly ? '<div class="da-map-legend"><span><i style="background:#2563eb"></i>Çevrimiçi kurye ve son canlı konumu</span></div>' : '<div class="da-map-legend"><span><i style="background:#16a34a"></i>Paketsiz işletme</span><span><i style="background:#f97316"></i>Aktif paketli işletme</span><span><i style="background:#dc2626"></i>Bekleyen paketli işletme</span><span><i style="background:#2563eb"></i>Aktif kurye</span><span><i style="background:#7c3aed"></i>Teslimat</span></div>';
+    const title = focusPackage ? `Paket Haritası · ${focusPackage.trackingNo || focusPackage.id}` : courierOnly ? "Canlı Kurye Haritası" : "Canlı Operasyon Haritası";
+    modal(title, `<div class="da-map-summary" data-map-summary>${operationMapSummary(data)}</div><div class="da-operation-layout"><div id="daMap" class="da-map"></div><aside class="da-operation-list" data-map-restaurants>${operationRestaurantList(data)}</aside></div>${legend}`, (root) => {
       const map = L.map(root.querySelector("#daMap")).setView([36.8121, 34.6415], 12);
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
       const markers = L.layerGroup().addTo(map);
@@ -468,7 +483,7 @@
       const refresh = async () => {
         if (!root.isConnected || refreshInFlight) { refreshQueued = refreshInFlight; return; }
         refreshInFlight = true;
-        try { renderLiveData(normalizeOperationMapData(await api("/api/admin/operation-map"), focusPackage)); }
+        try { renderLiveData(projectData(normalizeOperationMapData(await api("/api/admin/operation-map"), focusPackage))); }
         catch { /* Son başarılı görüntüyü koru; sonraki canlı olay veya aralık tekrar dener. */ }
         finally {
           refreshInFlight = false;
@@ -584,8 +599,8 @@
     modal("Yeni İşletme", `<form class="da-grid"><label class="da-field"><span>İşletme adı</span><input name="name" required></label><label class="da-field"><span>Bölge</span><input name="zone" value="Merkez" required></label><label class="da-field"><span>Kullanıcı adı</span><input name="username" required></label><label class="da-field"><span>Parola</span><input name="password" type="password" required></label><label class="da-field"><span>Telefon</span><input name="phone"></label><label class="da-field"><span>Adres</span><input name="address"></label><label class="da-field"><span>Enlem</span><input name="latitude" type="number" step="any" value="36.8121"></label><label class="da-field"><span>Boylam</span><input name="longitude" type="number" step="any" value="34.6415"></label><div class="da-actions"><button class="da-primary">İşletmeyi Kaydet</button></div></form>`, (root) => root.querySelector("form").addEventListener("submit", async (event) => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget)); try { hydrate(await api("/api/admin/restaurants", { method: "POST", body: JSON.stringify(data) })); root.remove(); toast("İşletme eklendi.", "success"); } catch (error) { toast(error.message, "error"); } }));
   }
 
-  function accountReportModal(rangeMode = false) {
-    const root = modal(rangeMode ? "İşletme Tarih Aralığı Raporu" : "Tüm İşletmeler Sipariş Raporu", '<div data-admin-account-report><div class="da-empty">Rapor hazırlanıyor...</div></div>', null, "da-report-modal");
+  function accountReportModal(rangeMode = false, title = "") {
+    const root = modal(title || (rangeMode ? "İşletme Tarih Aralığı Raporu" : "Tüm İşletmeler Sipariş Raporu"), '<div data-admin-account-report><div class="da-empty">Rapor hazırlanıyor...</div></div>', null, "da-report-modal");
     const container = root.querySelector("[data-admin-account-report]");
     let selectedDate = localDateKey();
     let periodFilter = rangeMode ? "range" : "day";
@@ -729,7 +744,7 @@
   }
 
   function recordManagement(config) {
-    const records = (state.data.managementRecords || []).filter((item) => item.recordType === config.type);
+    const records = (state.data?.managementRecords || []).filter((item) => item.recordType === config.type);
     const subjects = config.subject === "restaurant" ? restaurants() : config.subject === "courier" ? couriers() : [];
     const subjectOptions = subjects.map((item) => `<option value="${esc(item.id)}">${esc(item.name)} · ${esc(item.zone || "-")}</option>`).join("");
     modal(config.title, `<form data-record-form class="da-grid"><input type="hidden" name="recordType" value="${esc(config.type)}"><input type="hidden" name="subjectType" value="${esc(config.subject || "system")}">${config.subject ? `<label class="da-field full"><span>${config.subject === "courier" ? "Kurye" : "İşletme"}</span><select name="subjectId" required><option value="">Seçin</option>${subjectOptions}</select></label>` : ""}<label class="da-field full"><span>Başlık / işlem nedeni</span><input name="title" required placeholder="${esc(config.placeholder || "Kayıt açıklaması")}"></label>${config.amount ? '<label class="da-field"><span>Tutar (+ ödül, - ceza)</span><input name="amount" type="number" step="0.01" value="0"></label>' : '<input type="hidden" name="amount" value="0">'}${config.dates !== false ? '<label class="da-field"><span>Başlangıç / işlem tarihi</span><input name="startDate" type="date"></label><label class="da-field"><span>Bitiş tarihi</span><input name="endDate" type="date"></label>' : ""}<label class="da-field full"><span>Not</span><textarea name="note" rows="2"></textarea></label><div class="da-actions"><button class="da-primary">Kaydı Veritabanına Ekle</button></div></form><div class="da-route-title mt-5">Kayıtlar</div><div class="da-list">${records.length ? records.map((item) => `<div class="da-list-row" data-record-id="${esc(item.id)}"><div><b>${esc(item.title)}</b><small>${esc(subjects.find((subject) => subject.id === item.subjectId)?.name || item.subjectId || "Sistem")} · ${esc(item.startDate || "Tarihsiz")}${item.endDate ? ` / ${esc(item.endDate)}` : ""} · ${esc(item.status)}</small>${item.note ? `<small>${esc(item.note)}</small>` : ""}</div><div class="da-list-actions">${item.amount ? `<b>${money(item.amount)}</b>` : ""}<button data-complete>${item.status === "completed" ? "Aktife Al" : "Tamamla"}</button><button data-delete-record>Sil</button></div></div>`).join("") : '<div class="da-empty">Henüz kayıt yok. Formdan gerçek bir kayıt oluşturabilirsiniz.</div>'}</div>`, (root) => {
@@ -739,9 +754,9 @@
     });
   }
 
-  function cashManagement() {
-    const items = state.data.cashReconciliations || [];
-    modal("Kurye Nakit ve Tahsilat Mutabakatı", `<div class="da-list">${items.length ? items.map((item) => `<form class="da-list-row" data-cash-id="${esc(item.id)}"><div><b>${esc(item.courierName)}</b><small>${esc(item.reportDate)} · Beklenen ${money(item.expectedCash)} · Fark ${money(item.variance)}</small></div><div class="da-list-actions"><input name="reportedCash" type="number" step="0.01" value="${Number(item.reportedCash || 0)}" class="w-28 border rounded p-2"><select name="status" class="border rounded p-2"><option value="pending" ${item.status === "pending" ? "selected" : ""}>Bekliyor</option><option value="approved" ${item.status === "approved" ? "selected" : ""}>Onaylandı</option><option value="rejected" ${item.status === "rejected" ? "selected" : ""}>Reddedildi</option></select><input name="adminNote" value="${esc(item.adminNote)}" placeholder="Admin notu" class="border rounded p-2"><button>Kaydet</button></div></form>`).join("") : '<div class="da-empty">Nakit mutabakatı kurye gün sonu yaptığında otomatik oluşur.</div>'}</div>`, (root) => root.querySelectorAll("[data-cash-id]").forEach((form) => form.addEventListener("submit", async (event) => { event.preventDefault(); try { absorb(await api(`/api/admin/cash-reconciliations/${encodeURIComponent(form.dataset.cashId)}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form))) })); toast("Nakit mutabakatı kaydedildi.", "success"); cashManagement(); } catch (error) { toast(error.message, "error"); } })));
+  function cashManagement(title = "Kurye Tahsilat Mutabakatı") {
+    const items = state.data?.cashReconciliations || [];
+    modal(title, `<div class="da-list">${items.length ? items.map((item) => `<form class="da-list-row" data-cash-id="${esc(item.id)}"><div><b>${esc(item.courierName)}</b><small>${esc(item.reportDate)} · Beklenen ${money(item.expectedCash)} · Fark ${money(item.variance)}</small></div><div class="da-list-actions"><input name="reportedCash" type="number" step="0.01" value="${Number(item.reportedCash || 0)}" class="w-28 border rounded p-2"><select name="status" class="border rounded p-2"><option value="pending" ${item.status === "pending" ? "selected" : ""}>Bekliyor</option><option value="approved" ${item.status === "approved" ? "selected" : ""}>Onaylandı</option><option value="rejected" ${item.status === "rejected" ? "selected" : ""}>Reddedildi</option></select><input name="adminNote" value="${esc(item.adminNote)}" placeholder="Admin notu" class="border rounded p-2"><button>Kaydet</button></div></form>`).join("") : '<div class="da-empty">Nakit mutabakatı kurye gün sonu yaptığında otomatik oluşur.</div>'}</div>`, (root) => root.querySelectorAll("[data-cash-id]").forEach((form) => form.addEventListener("submit", async (event) => { event.preventDefault(); try { absorb(await api(`/api/admin/cash-reconciliations/${encodeURIComponent(form.dataset.cashId)}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form))) })); toast("Nakit mutabakatı kaydedildi.", "success"); cashManagement(title); } catch (error) { toast(error.message, "error"); } })));
   }
 
   function courierPricingManagement() {
@@ -755,12 +770,94 @@
     });
   }
 
-  function courierEarningsManagement() {
-    const earnings = state.data.courierEarnings || [];
-    modal("Kurye Hakediş ve Kazanç Yönetimi", `<form data-generate-earnings class="da-grid"><label class="da-field"><span>Tarih</span><input name="date" type="date" value="${new Date().toISOString().slice(0, 10)}"></label><label class="da-field"><span>Kurye (boşsa tümü)</span><select name="courierId"><option value="">Tüm kuryeler</option>${couriers().map((courier) => `<option value="${esc(courier.id)}">${esc(courier.name)}</option>`).join("")}</select></label><div class="da-actions"><button class="da-primary">Hakedişleri Hesapla / Güncelle</button></div></form><div class="da-list mt-5">${earnings.length ? earnings.map((item) => `<div class="da-list-row" data-earning-id="${esc(item.id)}"><div><b>${esc(item.courierName)}</b><small>${esc(item.reportDate)} · ${item.deliveredPackageCount} paket · ${esc(item.paymentStatus)}</small></div><div class="da-list-actions"><b>${money(item.totalPayable)}</b>${item.paymentStatus !== "paid" ? '<button data-mark-paid>Ödendi İşaretle</button>' : ""}</div></div>`).join("") : '<div class="da-empty">Seçilen gün için hakediş yok. Hesapla düğmesini kullanın.</div>'}</div>`, (root) => {
-      root.querySelector("[data-generate-earnings]").addEventListener("submit", async (event) => { event.preventDefault(); try { const result = await api("/api/admin/courier-earnings/generate", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) }); absorb(result); if (result.courierEarnings) state.data.courierEarnings = result.courierEarnings; toast("Hakedişler teslim edilen paketlerden hesaplandı.", "success"); courierEarningsManagement(); } catch (error) { toast(error.message, "error"); } });
-      root.querySelectorAll("[data-mark-paid]").forEach((button) => button.addEventListener("click", async () => { try { const result = await api(`/api/admin/courier-earnings/${encodeURIComponent(button.closest("[data-earning-id]").dataset.earningId)}/mark-paid`, { method: "POST", body: JSON.stringify({ adminNote: "Admin panelinden ödendi" }) }); absorb(result); await load(true); courierEarningsManagement(); } catch (error) { toast(error.message, "error"); } }));
+  function courierEarningsManagement(title = "Kurye Hakediş ve Kazanç Yönetimi") {
+    const earnings = state.data?.courierEarnings || [];
+    modal(title, `<form data-generate-earnings class="da-grid"><label class="da-field"><span>Tarih</span><input name="date" type="date" value="${new Date().toISOString().slice(0, 10)}"></label><label class="da-field"><span>Kurye (boşsa tümü)</span><select name="courierId"><option value="">Tüm kuryeler</option>${couriers().map((courier) => `<option value="${esc(courier.id)}">${esc(courier.name)}</option>`).join("")}</select></label><div class="da-actions"><button class="da-primary">Hakedişleri Hesapla / Güncelle</button></div></form><div class="da-list mt-5">${earnings.length ? earnings.map((item) => `<div class="da-list-row" data-earning-id="${esc(item.id)}"><div><b>${esc(item.courierName)}</b><small>${esc(item.reportDate)} · ${item.deliveredPackageCount} paket · ${esc(item.paymentStatus)}</small></div><div class="da-list-actions"><b>${money(item.totalPayable)}</b>${item.paymentStatus !== "paid" ? '<button data-mark-paid>Ödendi İşaretle</button>' : ""}</div></div>`).join("") : '<div class="da-empty">Seçilen gün için hakediş yok. Hesapla düğmesini kullanın.</div>'}</div>`, (root) => {
+      root.querySelector("[data-generate-earnings]").addEventListener("submit", async (event) => { event.preventDefault(); try { const result = await api("/api/admin/courier-earnings/generate", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) }); absorb(result); if (result.courierEarnings) state.data.courierEarnings = result.courierEarnings; toast("Hakedişler teslim edilen paketlerden hesaplandı.", "success"); courierEarningsManagement(title); } catch (error) { toast(error.message, "error"); } });
+      root.querySelectorAll("[data-mark-paid]").forEach((button) => button.addEventListener("click", async () => { try { const result = await api(`/api/admin/courier-earnings/${encodeURIComponent(button.closest("[data-earning-id]").dataset.earningId)}/mark-paid`, { method: "POST", body: JSON.stringify({ adminNote: "Admin panelinden ödendi" }) }); absorb(result); await load(true); courierEarningsManagement(title); } catch (error) { toast(error.message, "error"); } }));
     });
+  }
+
+  function summaryListModal(title, items, renderItem, emptyMessage = "Bu bölüm için kayıt bulunamadı.") {
+    modal(title, `<div class="da-list">${items.length ? items.map(renderItem).join("") : `<div class="da-empty">${esc(emptyMessage)}</div>`}</div>`);
+  }
+
+  function courierStatusReport() {
+    const items = couriers();
+    summaryListModal("Kurye Durum Raporu", items, (courier) => `<div class="da-list-row"><div><b>${esc(courier.name)}</b><small>${esc(courier.zone || "Bölgesiz")} · Son konum ${dateTime(courier.lastLocationAt)}</small></div><div class="da-list-actions"><span class="da-badge">${esc(courier.status || "offline")}</span><b>${Number(courier.activeLoad || 0)} aktif paket</b></div></div>`, "Kayıtlı kurye bulunamadı.");
+  }
+
+  function courierCashReport() {
+    const items = state.data?.cashReconciliations || [];
+    const expected = items.reduce((sum, item) => sum + Number(item.expectedCash || 0), 0);
+    const reported = items.reduce((sum, item) => sum + Number(item.reportedCash || 0), 0);
+    modal("Kurye Nakitleri Raporu", `<div class="da-kpi"><div><strong>${money(expected)}</strong><span>Beklenen nakit</span></div><div><strong>${money(reported)}</strong><span>Bildirilen nakit</span></div><div><strong>${money(reported - expected)}</strong><span>Toplam fark</span></div></div><div class="da-list">${items.length ? items.map((item) => `<div class="da-list-row"><div><b>${esc(item.courierName)}</b><small>${esc(item.reportDate)} · ${esc(item.status || "pending")}</small></div><div class="da-list-actions"><span>Beklenen ${money(item.expectedCash)}</span><b>${money(item.reportedCash)}</b></div></div>`).join("") : '<div class="da-empty">Henüz gün sonu nakit kaydı yok.</div>'}</div>`);
+  }
+
+  function deliveryTrackingReport() {
+    const selected = packages().filter((pkg) => pkg.assignedCourierId || pkg.assignedCourierName || ["delivered", "failed", "cancelled", "canceled"].includes(pkg.status));
+    summaryListModal("İşletme-Kurye Teslim Takibi", selected, (pkg) => `<div class="da-list-row"><div><b>${esc(pkg.trackingNo || pkg.id)} · ${esc(pkg.restaurantName || "İşletme yok")}</b><small>${esc(pkg.customerName || "Müşteri yok")} · ${dateTime(pkg.createdAt)}</small></div><div class="da-list-actions"><span>${esc(pkg.assignedCourierName || courierFor(pkg)?.name || "Kurye atanmadı")}</span><b>${esc(statusLabels[pkg.status] || pkg.status)}</b></div></div>`, "Henüz işletme-kurye teslim kaydı yok.");
+  }
+
+  function courierPoolEligibility() {
+    const eligible = couriers().map((courier) => ({ ...courier, poolEligible: courier.available !== false && !["offline", "inactive"].includes(courier.status) && Number(courier.activeLoad || 0) > 0 && Number(courier.activeLoad || 0) < 2 }));
+    summaryListModal("Kurye Havuz Uygunlukları", eligible, (courier) => `<div class="da-list-row"><div><b>${esc(courier.name)}</b><small>${esc(courier.zone || "Bölgesiz")} · ${Number(courier.activeLoad || 0)} aktif paket</small></div><div class="da-list-actions"><span class="da-badge">${courier.poolEligible ? "Havuzdan 1 ek paket alabilir" : "Şu anda uygun değil"}</span></div></div>`, "Kayıtlı kurye bulunamadı.");
+  }
+
+  function poolPackageHistory() {
+    const selected = packages().filter((pkg) => normalize(`${pkg.assignmentReason || ""} ${pkg.status || ""}`).includes("havuz") || pkg.status === "awaiting_assignment");
+    summaryListModal("Havuz Sipariş Geçmişi", selected, (pkg) => `<div class="da-list-row"><div><b>${esc(pkg.trackingNo || pkg.id)} · ${esc(pkg.restaurantName || "İşletme yok")}</b><small>${esc(pkg.assignmentReason || "Atama bekliyor")} · ${dateTime(pkg.createdAt)}</small></div><div class="da-list-actions"><span>${esc(pkg.assignedCourierName || "Atanmamış")}</span><b>${esc(statusLabels[pkg.status] || pkg.status)}</b></div></div>`, "Havuzda veya havuz geçmişinde paket bulunamadı.");
+  }
+
+  function detailedPackageReport() {
+    summaryListModal("Detaylı Sipariş Raporu", packages(), (pkg) => `<div class="da-list-row"><div><b>${esc(pkg.trackingNo || pkg.id)} · ${esc(pkg.restaurantName || "İşletme yok")}</b><small>${esc(pkg.customerName || "Müşteri yok")} · ${esc(pkg.deliveryAddress || pkg.address || "Adres yok")} · ${dateTime(pkg.createdAt)}</small></div><div class="da-list-actions"><span>${esc(pkg.paymentMethod || "Ödeme yok")}</span><b>${money(pkg.orderAmount)}</b></div></div>`, "Sipariş kaydı bulunamadı.");
+  }
+
+  function paymentTypeReport() {
+    const buckets = new Map();
+    packages().forEach((pkg) => { const key = pkg.paymentMethod || "Belirtilmedi"; const current = buckets.get(key) || { label: key, count: 0, amount: 0 }; current.count += 1; current.amount += Number(pkg.orderAmount || 0); buckets.set(key, current); });
+    summaryListModal("Kurye Ödeme Türü Raporu", [...buckets.values()], (item) => `<div class="da-list-row"><div><b>${esc(item.label)}</b><small>${item.count} paket</small></div><b>${money(item.amount)}</b></div>`, "Ödeme türü kaydı bulunamadı.");
+  }
+
+  function deliveryDurationReport() {
+    const selected = packages().filter((pkg) => pkg.deliveredAt && pkg.createdAt).map((pkg) => ({ ...pkg, durationMinutes: Math.max(0, Math.round((new Date(pkg.deliveredAt) - new Date(pkg.createdAt)) / 60000)) }));
+    summaryListModal("Kurye Teslim Süre Raporu", selected, (pkg) => `<div class="da-list-row"><div><b>${esc(pkg.trackingNo || pkg.id)} · ${esc(pkg.assignedCourierName || courierFor(pkg)?.name || "Kurye yok")}</b><small>${esc(pkg.restaurantName || "İşletme yok")} · ${dateTime(pkg.deliveredAt)}</small></div><b>${pkg.durationMinutes} dakika</b></div>`, "Teslim süresi hesaplanabilecek tamamlanmış paket yok.");
+  }
+
+  function restaurantEarningsReport(title = "Firma Kazanç Raporu", selected = packages()) {
+    const groups = new Map();
+    selected.filter((pkg) => pkg.status === "delivered").forEach((pkg) => { const id = pkg.restaurantId || pkg.restaurantName || "unknown"; const current = groups.get(id) || { name: pkg.restaurantName || id, count: 0, amount: 0 }; current.count += 1; current.amount += Number(pkg.orderAmount || 0); groups.set(id, current); });
+    summaryListModal(title, [...groups.values()], (item) => `<div class="da-list-row"><div><b>${esc(item.name)}</b><small>${item.count} teslim edilen paket</small></div><b>${money(item.amount)}</b></div>`, "Teslim edilmiş işletme paketi bulunamadı.");
+  }
+
+  function restaurantCourierEarningsReport() {
+    const groups = new Map();
+    packages().filter((pkg) => pkg.status === "delivered").forEach((pkg) => { const courierName = pkg.assignedCourierName || courierFor(pkg)?.name || "Kurye yok"; const restaurantName = pkg.restaurantName || "İşletme yok"; const key = `${restaurantName}|${courierName}`; const current = groups.get(key) || { restaurantName, courierName, count: 0 }; current.count += 1; groups.set(key, current); });
+    summaryListModal("Restoran Bazlı Kurye Kazanç Raporu", [...groups.values()], (item) => `<div class="da-list-row"><div><b>${esc(item.restaurantName)}</b><small>${esc(item.courierName)}</small></div><b>${item.count} teslimat</b></div>`, "Restoran-kurye teslimat kaydı bulunamadı.");
+  }
+
+  function zoneCollectionReport() {
+    const accounting = state.data?.restaurantAccounting || [];
+    const groups = new Map();
+    accounting.forEach((item) => { const restaurant = restaurants().find((entry) => entry.id === item.restaurantId); const zone = restaurant?.zone || "Bölgesiz"; const current = groups.get(zone) || { zone, restaurants: 0, payable: 0, collected: 0 }; current.restaurants += 1; current.payable += Number(item.netPayable || 0); current.collected += Number(item.totalCourierCollected || 0); groups.set(zone, current); });
+    summaryListModal("İşletme Bölge Bazlı Tahsilat", [...groups.values()], (item) => `<div class="da-list-row"><div><b>${esc(item.zone)}</b><small>${item.restaurants} işletme · Kurye tahsilatı ${money(item.collected)}</small></div><b>Net ${money(item.payable)}</b></div>`, "Bölgesel tahsilat kaydı bulunamadı.");
+  }
+
+  function managementRecordReport(type, title) {
+    const records = (state.data?.managementRecords || []).filter((item) => item.recordType === type);
+    const total = records.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    modal(title, `<div class="da-kpi"><div><strong>${records.length}</strong><span>Kayıt</span></div><div><strong>${money(total)}</strong><span>Toplam etki</span></div></div><div class="da-list">${records.length ? records.map((item) => `<div class="da-list-row"><div><b>${esc(item.title)}</b><small>${esc(item.subjectId || "Sistem")} · ${esc(item.startDate || "Tarihsiz")} · ${esc(item.status)}</small>${item.note ? `<small>${esc(item.note)}</small>` : ""}</div><b>${money(item.amount)}</b></div>`).join("") : '<div class="da-empty">Bu raporda kayıt bulunamadı.</div>'}</div>`);
+  }
+
+  function partialPaymentReport() {
+    const selected = packages().filter((pkg) => Number(pkg.collectedAmount || 0) > 0 && Number(pkg.collectedAmount || 0) < Number(pkg.orderAmount || 0));
+    summaryListModal("Parçalı Ödeme Raporu", selected, (pkg) => `<div class="da-list-row"><div><b>${esc(pkg.trackingNo || pkg.id)} · ${esc(pkg.customerName || "Müşteri yok")}</b><small>${esc(pkg.restaurantName || "İşletme yok")} · ${esc(pkg.paymentMethod || "Ödeme yok")}</small></div><div class="da-list-actions"><span>Tahsil ${money(pkg.collectedAmount)}</span><b>Kalan ${money(Number(pkg.orderAmount || 0) - Number(pkg.collectedAmount || 0))}</b></div></div>`, "Parçalı tahsilat kaydı bulunamadı.");
+  }
+
+  function courierPackageEarningsReport(title, selected) {
+    const groups = new Map();
+    selected.filter((pkg) => pkg.status === "delivered").forEach((pkg) => { const courier = courierFor(pkg); const id = pkg.assignedCourierId || courier?.id || pkg.assignedCourierName || "unknown"; const current = groups.get(id) || { name: pkg.assignedCourierName || courier?.name || "Kurye yok", count: 0, payable: 0 }; current.count += 1; current.payable += Number(courier?.perPackageFee || pkg.courierFee || 0); groups.set(id, current); });
+    summaryListModal(title, [...groups.values()], (item) => `<div class="da-list-row"><div><b>${esc(item.name)}</b><small>${item.count} teslim edilen paket</small></div><b>${money(item.payable)}</b></div>`, "Kazanç hesaplanabilecek teslimat bulunamadı.");
   }
 
   async function restaurantAccountingManagement() {
@@ -864,6 +961,41 @@
   }
 
   function genericRoute(route) {
+    const exactHandlers = {
+      "kurye raporu": courierStatusReport,
+      "kurye performans": () => courierPerformanceManagement(),
+      "kurye tahsilat": () => cashManagement("Kurye Tahsilat Mutabakatı"),
+      "kurye nakitleri": courierCashReport,
+      "işletme-kurye teslim takibi": deliveryTrackingReport,
+      "kurye ücretlendirme": courierPricingManagement,
+      "kurye kazanç": () => courierEarningsManagement("Kurye Hakediş ve Kazanç Yönetimi"),
+      "restoran bazlı kurye kazanç": restaurantCourierEarningsReport,
+      "kurye havuz yetkileri": courierPoolEligibility,
+      "havuz sipariş geçmişi": poolPackageHistory,
+      "günlük sipariş raporu": () => accountReportModal(),
+      "detaylı sipariş raporu": detailedPackageReport,
+      "parçalı ödeme raporu": partialPaymentReport,
+      "kurye teslim süre raporu": deliveryDurationReport,
+      "kurye ödeme türü raporu": paymentTypeReport,
+      "kurye ceza & ödül raporu": () => managementRecordReport("courier_adjustment", "Kurye Ceza ve Ödül Raporu"),
+      "firma kazanç": restaurantEarningsReport,
+      "işletme tahsilat": () => restaurantAccountingManagement().catch((error) => toast(error.message, "error")),
+      "restoran hesap raporu": () => accountReportModal(true, "Restoran Hesap Raporu"),
+      "işletme ücret iadesi": () => recordManagement({ type: "restaurant_refund", subject: "restaurant", title: "İşletme Ücret İadeleri", placeholder: "İade nedeni", amount: true, dates: true }),
+      "entegrasyon yönetimi": integrationManagement,
+      "kurye özel ücretlendirme": () => recordManagement({ type: "courier_special_pricing", subject: "courier", title: "Kurye Özel Ücretlendirme", placeholder: "Özel ücret kuralı", amount: true, dates: true }),
+      "işletme ücretlendirme": () => recordManagement({ type: "restaurant_pricing", subject: "restaurant", title: "İşletme Ücretlendirme", placeholder: "İşletme ücret kuralı", amount: true, dates: true }),
+      "restoran fiyatlandırması": () => recordManagement({ type: "restaurant_menu_pricing", subject: "restaurant", title: "Restoran Fiyatlandırması", placeholder: "Restoran fiyat planı", amount: true, dates: true }),
+      "paket satın alma": () => recordManagement({ type: "credit_package", subject: "restaurant", title: "İşletme Paket Satın Alma", placeholder: "Paket / kontör açıklaması", amount: true, dates: true }),
+      "sistem dışı onaylar": () => recordManagement({ type: "external_approval", subject: "courier", title: "Sistem Dışı İşlem Onayları", placeholder: "Onay kaydı", amount: true, dates: true }),
+      "sistem dışı rapor": () => reportModal("Sistem Dışı İşlemler", packages().filter((pkg) => ["external_manual", "manual", "admin_manual"].includes(pkg.source))),
+      "sistem dışı dahil kurye kazanç": () => courierPackageEarningsReport("Sistem Dışı Dahil Kurye Kazanç", packages()),
+      "bölge tanımlama": zoneManagement,
+      "işletme bölge fiyatlandırma": () => recordManagement({ type: "restaurant_zone_pricing", subject: "restaurant", title: "İşletme Bölge Fiyatlandırma", placeholder: "Bölge fiyat kuralı", amount: true, dates: true }),
+      "işletme bölge bazlı tahsilat": zoneCollectionReport,
+      "işletme tarih aralığı": () => accountReportModal(true),
+    };
+    if (exactHandlers[route]) return exactHandlers[route]();
     if (route.includes("restoran giriş bilgileri")) return restaurantCredentialManagement();
     if (route.includes("haftalık izin plan")) return recordManagement({ type: "courier_leave", subject: "courier", title: "Kurye İzin Planı", placeholder: "Yıllık izin, haftalık izin veya mazeret", dates: true });
     if (route.includes("vardiya") || route.includes("mola")) return shiftManagement().catch((error) => toast(error.message, "error"));
@@ -904,8 +1036,10 @@
 
   function handleRoute(route) {
     refs.sidebarLinks.forEach((link) => link.classList.toggle("da-active-route", link.dataset.route === route));
-    if (route === "operasyon" || route === "siparişler") return restoreOperations("all");
-    if (route.includes("harita")) return showMap().catch((error) => toast(error.message, "error"));
+    if (route === "operasyon") return restoreOperations("all");
+    if (route === "siparişler") return detailedPackageReport();
+    if (route === "operasyon haritası") return showMap().catch((error) => toast(error.message, "error"));
+    if (route === "canlı harita") return showMap(null, { mode: "couriers" }).catch((error) => toast(error.message, "error"));
     if (route === "işletmeler") return restaurantManagement();
     if (route === "kuryeler") return courierManagement();
     if (route.includes("eşleşmeyen paket")) return showUnmatchedWorkspace().catch((error) => toast(error.message, "error"));
@@ -919,7 +1053,7 @@
       return toast("Restoran kurulum dosyası indirildi. Restoran bilgisayarında bir kez çalıştırın.", "success");
     }
     if (route.includes("oto atama")) return modal("Oto Atama Yönetimi", `<div class="da-list"><div class="da-list-row"><b>Aktif kurye</b><span>${state.data.stats?.activeCouriers || 0}</span></div><div class="da-list-row"><b>Atama bekleyen</b><span>${state.data.stats?.waitingPackages || 0}</span></div><div class="da-list-row"><b>Atama yöntemi</b><span>En yakın uygun kurye · canlı GPS ve kapasite kontrolü</span></div></div><div class="da-actions mt-4"><button class="da-primary" data-rebalance>Bekleyen Paketleri Şimdi Yeniden Ata</button></div>`, (root) => root.querySelector("[data-rebalance]").addEventListener("click", async () => { try { absorb(await api("/api/admin/rebalance", { method: "POST", body: "{}" })); toast("Otomatik atama yeniden çalıştırıldı.", "success"); root.remove(); } catch (error) { toast(error.message, "error"); } }));
-    genericRoute(route);
+    return genericRoute(route);
   }
 
   refs.filterButtons.forEach((button) => button.addEventListener("click", () => restoreOperations(button.dataset.filter)));

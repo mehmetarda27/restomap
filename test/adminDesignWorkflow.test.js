@@ -66,6 +66,10 @@ test("new admin design renders backend packages and listens to named live operat
   assert.doesNotMatch(window.document.getElementById("adminOperationRows").textContent, /PKT-ADMIN-OLD/);
   assert.match(window.document.getElementById("adminOperationRows").textContent, /Admin Test Restoran/);
   assert.equal(window.document.querySelector('[aria-label="Bildirim Merkezi"] .da-notification-badge').textContent, "1");
+  const creditShortcut = window.document.querySelector('[aria-label="Kontör İşlemleri"]');
+  assert.ok(creditShortcut);
+  assert.equal(creditShortcut.getAttribute("role"), "button");
+  assert.equal(creditShortcut.querySelector(".text-green-600").textContent, "0");
   ["package-created", "package-assigned", "package-status", "assignment-waiting", "order:new", "courier-location", "workspace-update"].forEach((type) => assert.ok(eventTypes.has(type), type));
   assert.ok(window.__adminDesignTest.visiblePackages().some((pkg) => pkg.id === "pkg_admin_ui"));
   assert.equal(window.document.querySelector('[data-action="map"]'), null);
@@ -111,5 +115,44 @@ test("new admin design renders backend packages and listens to named live operat
   await delay(20);
   assert.match(window.document.querySelector(".da-modal-body").textContent, /7 toplam paket · 5 teslimat · 2 iptal/);
   assert.deepEqual([...window.document.querySelector('[data-accounting-filter] select[name="restaurantId"]').options].map((option) => option.textContent), ["Tüm restoranlar", "Admin Test Restoran"]);
+  window.document.querySelector(".da-modal-root")?.remove();
+
+  const distinctAdminRoutes = [
+    ["siparişler", "Detaylı Sipariş Raporu"],
+    ["kurye raporu", "Kurye Durum Raporu"],
+    ["kurye performans", "Kurye Performans ve Kazanç"],
+    ["kurye tahsilat", "Kurye Tahsilat Mutabakatı"],
+    ["kurye nakitleri", "Kurye Nakitleri Raporu"],
+    ["işletme-kurye teslim takibi", "İşletme-Kurye Teslim Takibi"],
+    ["kurye ücretlendirme", "Kurye Paket Başı Ücretlendirme"],
+    ["kurye özel ücretlendirme", "Kurye Özel Ücretlendirme"],
+    ["kurye kazanç", "Kurye Hakediş ve Kazanç Yönetimi"],
+    ["restoran bazlı kurye kazanç", "Restoran Bazlı Kurye Kazanç Raporu"],
+    ["kurye havuz yetkileri", "Kurye Havuz Uygunlukları"],
+    ["havuz sipariş geçmişi", "Havuz Sipariş Geçmişi"],
+    ["detaylı sipariş raporu", "Detaylı Sipariş Raporu"],
+    ["parçalı ödeme raporu", "Parçalı Ödeme Raporu"],
+    ["kurye teslim süre raporu", "Kurye Teslim Süre Raporu"],
+    ["kurye ödeme türü raporu", "Kurye Ödeme Türü Raporu"],
+    ["kurye ceza & ödül raporu", "Kurye Ceza ve Ödül Raporu"],
+    ["firma kazanç", "Firma Kazanç Raporu"],
+    ["işletme ücret iadesi", "İşletme Ücret İadeleri"],
+    ["işletme ücretlendirme", "İşletme Ücretlendirme"],
+    ["restoran fiyatlandırması", "Restoran Fiyatlandırması"],
+    ["paket satın alma", "İşletme Paket Satın Alma"],
+    ["kontör", "İşletme Paket ve Kontör İşlemleri"],
+    ["sistem dışı onaylar", "Sistem Dışı İşlem Onayları"],
+    ["sistem dışı rapor", "Sistem Dışı İşlemler"],
+    ["sistem dışı dahil kurye kazanç", "Sistem Dışı Dahil Kurye Kazanç"],
+    ["işletme bölge fiyatlandırma", "İşletme Bölge Fiyatlandırma"],
+    ["işletme bölge bazlı tahsilat", "İşletme Bölge Bazlı Tahsilat"],
+    ["restoran hesap raporu", "Restoran Hesap Raporu"],
+  ];
+  for (const [route, title] of distinctAdminRoutes) {
+    await window.__adminDesignTest.handleRoute(route);
+    await delay(5);
+    assert.match(window.document.querySelector(".da-modal-head")?.textContent || "", new RegExp(title), route);
+    window.document.querySelector(".da-modal-root")?.remove();
+  }
   dom.window.close();
 });
