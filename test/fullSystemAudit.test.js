@@ -111,9 +111,12 @@ test('full audit: notifications, role isolation, DB integrity and paid earnings'
     }
     assert.ok(row().delivered_at);
     const reportDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    const generated = await request('/api/admin/courier-earnings/generate', admin, 'POST', { date: reportDate, courierId: 'c_a' });
+    // Legacy earnings use the UTC delivery date; restaurant reports use Istanbul.
+    // Keep the fixture aligned with both existing contracts, including after local midnight.
+    const earningDate = row().delivered_at.slice(0, 10);
+    const generated = await request('/api/admin/courier-earnings/generate', admin, 'POST', { date: earningDate, courierId: 'c_a' });
     assert.equal(generated.status, 200, JSON.stringify(generated.body));
-    const earning = db.prepare('SELECT * FROM courier_earnings WHERE courier_id=? AND report_date=?').get('c_a', reportDate);
+    const earning = db.prepare('SELECT * FROM courier_earnings WHERE courier_id=? AND report_date=?').get('c_a', earningDate);
     assert.ok(earning);
     assert.equal(earning.delivered_package_count, 1);
     assert.equal(earning.total_payable, 10.30);
