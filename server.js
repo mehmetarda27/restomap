@@ -30,6 +30,7 @@ const path = require("path");
 const crypto = require("crypto");
 const net = require("net");
 const webPush = require("web-push");
+const { toMinor: financeToMinor, sumMinor: financeSumMinor } = require("./services/financeMoney");
 
 const uploadsDir = path.resolve(process.env.DELIVERA_UPLOAD_DIR || path.join(__dirname, "uploads"));
 if (!fs.existsSync(uploadsDir)) {
@@ -4208,11 +4209,24 @@ function streamMatchesAudience(stream, event) {
   if (stream.audience.role === "admin") {
     return true;
   }
+  if (event.broadcast === true || event.targetRole === "all") {
+    return true;
+  }
+  if (Array.isArray(event.audiences)) {
+    return event.audiences.some((audience) => {
+      if (!audience || audience.role !== stream.audience.role) return false;
+      if (audience.role === "restaurant") return audience.id === stream.audience.restaurantId;
+      if (audience.role === "courier") return audience.id === stream.audience.courierId;
+      return false;
+    });
+  }
   if (stream.audience.role === "restaurant") {
-    return !event.restaurantId || event.restaurantId === stream.audience.restaurantId;
+    return Boolean(event.restaurantId && event.restaurantId === stream.audience.restaurantId)
+      || (event.targetRole === "restaurant" && event.targetId === stream.audience.restaurantId);
   }
   if (stream.audience.role === "courier") {
-    return !event.courierId || event.courierId === stream.audience.courierId;
+    return Boolean(event.courierId && event.courierId === stream.audience.courierId)
+      || (event.targetRole === "courier" && event.targetId === stream.audience.courierId);
   }
   return false;
 }
@@ -6430,7 +6444,29 @@ function mapCourierEarningRow(row, options = {}) {
 }
 
 function recalculateCourierEarningTotal(count, fee, bonus = 0, deduction = 0) {
-  return normalizeMoney((Number(count || 0) * normalizeMoney(fee)) + normalizeMoney(bonus) - normalizeMoney(deduction));
+  return financeSumMinor([moneyToCents(fee) * Number(count || 0), moneyToCents(bonus), -moneyToCents(deduction)]) / 100;
+}
+
+function recordedEarningAdjustments(courierId, reportDate) {
+  const rows = db.prepare(`SELECT amount FROM management_records
+    WHERE record_type = 'courier_adjustment' AND subject_type = 'courier'
+      AND subject_id = ? AND status = 'active'
+      AND COALESCE(NULLIF(start_date, ''), SUBSTR(created_at, 1, 10)) = ?`).all(courierId, reportDate);
+  return {
+    bonus: financeSumMinor(rows.filter((row) => row.amount > 0).map((row) => financeToMinor(String(row.amount)))) / 100,
+    deduction: -financeSumMinor(rows.filter((row) => row.amount < 0).map((row) => financeToMinor(String(row.amount)))) / 100,
+  };
+}
+
+function initializeEarningManualComponents(courierId, date) {
+  const row = db.prepare("SELECT * FROM courier_earnings WHERE courier_id = ? AND report_date = ?").get(courierId, date);
+  if (!row || (row.manual_bonus_amount != null && row.manual_deduction_amount != null)) return;
+  const recorded = recordedEarningAdjustments(courierId, date);
+  const bonus = moneyToCents(row.bonus_amount) - moneyToCents(recorded.bonus);
+  const deduction = moneyToCents(row.deduction_amount) - moneyToCents(recorded.deduction);
+  if (bonus < 0 || deduction < 0) throw httpError(409, "Eski hakedis ile ceza/odul kayitlari uyusmuyor; mali mutabakat gerekli.");
+  db.prepare("UPDATE courier_earnings SET manual_bonus_amount = ?, manual_deduction_amount = ? WHERE id = ?")
+    .run(row.manual_bonus_amount ?? bonus / 100, row.manual_deduction_amount ?? deduction / 100, row.id);
 }
 
 function syncCourierEarning(courierId, reportDate = dayKey(), options = {}) {
@@ -6439,17 +6475,20 @@ function syncCourierEarning(courierId, reportDate = dayKey(), options = {}) {
     throw httpError(404, "Kurye bulunamadi.");
   }
   const packages = deliveredPackagesForCourierEarnings(courierId, reportDate);
+  initializeEarningManualComponents(courierId, reportDate);
   const existing = db.prepare("SELECT * FROM courier_earnings WHERE courier_id = ? AND report_date = ?").get(courierId, reportDate);
   const stamp = nowIso();
   const perPackageFee = options.perPackageFee !== undefined && options.perPackageFee !== ""
     ? normalizeMoney(options.perPackageFee)
     : normalizeMoney(existing?.per_package_fee || defaultCourierPackageFee(courier));
-  const datedAdjustments = getManagementRecords({ recordType: "courier_adjustment", subjectId: courierId, status: "active" })
-    .filter((item) => !item.startDate || item.startDate === reportDate);
-  const recordedBonus = datedAdjustments.filter((item) => item.amount > 0).reduce((sum, item) => sum + item.amount, 0);
-  const recordedDeduction = Math.abs(datedAdjustments.filter((item) => item.amount < 0).reduce((sum, item) => sum + item.amount, 0));
-  const bonusAmount = options.bonusAmount !== undefined ? normalizeMoney(options.bonusAmount) : normalizeMoney(existing?.bonus_amount || recordedBonus);
-  const deductionAmount = options.deductionAmount !== undefined ? normalizeMoney(options.deductionAmount) : normalizeMoney(existing?.deduction_amount || recordedDeduction);
+  const recorded = recordedEarningAdjustments(courierId, reportDate);
+  const manualBonus = options.bonusAmount !== undefined
+    ? moneyToCents(options.bonusAmount) - moneyToCents(recorded.bonus) : moneyToCents(existing?.manual_bonus_amount || 0);
+  const manualDeduction = options.deductionAmount !== undefined
+    ? moneyToCents(options.deductionAmount) - moneyToCents(recorded.deduction) : moneyToCents(existing?.manual_deduction_amount || 0);
+  if (manualBonus < 0 || manualDeduction < 0) throw httpError(400, "Toplam tutar kayitli ceza/odulden az olamaz; ilgili kaydi duzenleyin.");
+  const bonusAmount = financeSumMinor([manualBonus, moneyToCents(recorded.bonus)]) / 100;
+  const deductionAmount = financeSumMinor([manualDeduction, moneyToCents(recorded.deduction)]) / 100;
   const totalPayable = recalculateCourierEarningTotal(packages.length, perPackageFee, bonusAmount, deductionAmount);
   const status = existing?.payment_status || "unpaid";
   const adminNote = options.adminNote !== undefined ? trimmed(options.adminNote) : (existing?.admin_note || "");
@@ -6473,6 +6512,8 @@ function syncCourierEarning(courierId, reportDate = dayKey(), options = {}) {
     `).run(earningId, courierId, reportDate, packages.length, perPackageFee, bonusAmount, deductionAmount, totalPayable, status, null, adminNote, stamp, stamp);
   }
 
+  db.prepare("UPDATE courier_earnings SET manual_bonus_amount = ?, manual_deduction_amount = ? WHERE id = ?")
+    .run(manualBonus / 100, manualDeduction / 100, earningId);
   db.prepare("DELETE FROM courier_earning_items WHERE courier_earning_id = ?").run(earningId);
   const insertItem = db.prepare(`
     INSERT INTO courier_earning_items (id, courier_earning_id, package_id, restaurant_id, delivered_at, package_fee, created_at)
@@ -7873,21 +7914,26 @@ function getManagementRecords(filters = {}) {
 
 function createManagementRecord(payload = {}) {
   const recordType = trimmed(payload.recordType);
+  if (recordType === "credit_package") throw httpError(400, "Kontor icin gercek kontor hareketi ekranini kullanin.");
   const title = trimmed(payload.title);
   if (!recordType || !title) throw httpError(400, "Kayit turu ve baslik zorunludur.");
+  validateManagementAdjustment(payload);
+  const amountSource = payload.amount === undefined || payload.amount === "" ? "0" : String(payload.amount);
   const id = uid("mgmt");
   const stamp = nowIso();
   db.prepare(`INSERT INTO management_records (id, record_type, subject_type, subject_id, title, amount, start_date, end_date, status, note, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, recordType, trimmed(payload.subjectType), trimmed(payload.subjectId), title, normalizeMoney(payload.amount), trimmed(payload.startDate) || null, trimmed(payload.endDate) || null, trimmed(payload.status) || "active", trimmed(payload.note), json(payload.metadata || {}), stamp, stamp);
-  return getManagementRecords().find((item) => item.id === id);
+    .run(id, recordType, trimmed(payload.subjectType), trimmed(payload.subjectId), title, financeToMinor(amountSource) / 100, trimmed(payload.startDate) || null, trimmed(payload.endDate) || null, trimmed(payload.status) || "active", trimmed(payload.note), json(payload.metadata || {}), stamp, stamp);
+  return mapManagementRecord(db.prepare("SELECT * FROM management_records WHERE id = ?").get(id));
 }
 
 function updateManagementRecord(recordId, payload = {}) {
   const current = db.prepare("SELECT * FROM management_records WHERE id = ?").get(recordId);
   if (!current) throw httpError(404, "Yonetim kaydi bulunamadi.");
+  validateManagementAdjustment({ ...mapManagementRecord(current), ...payload, recordType: current.record_type, subjectType: current.subject_type, subjectId: current.subject_id });
+  const amountSource = payload.amount === undefined || payload.amount === "" ? "0" : String(payload.amount);
   db.prepare(`UPDATE management_records SET title = ?, amount = ?, start_date = ?, end_date = ?, status = ?, note = ?, metadata_json = ?, updated_at = ? WHERE id = ?`).run(
     trimmed(payload.title ?? current.title) || current.title,
-    payload.amount === undefined ? Number(current.amount || 0) : normalizeMoney(payload.amount),
+    payload.amount === undefined ? Number(current.amount || 0) : financeToMinor(amountSource) / 100,
     trimmed(payload.startDate ?? current.start_date) || null,
     trimmed(payload.endDate ?? current.end_date) || null,
     trimmed(payload.status ?? current.status) || "active",
@@ -7899,11 +7945,51 @@ function updateManagementRecord(recordId, payload = {}) {
   return mapManagementRecord(db.prepare("SELECT * FROM management_records WHERE id = ?").get(recordId));
 }
 
-function syncManagementRecordAccounting(record) {
-  if (!record || record.recordType !== "courier_adjustment" || !record.subjectId || !record.startDate) return;
-  const existing = db.prepare("SELECT payment_status FROM courier_earnings WHERE courier_id = ? AND report_date = ?").get(record.subjectId, record.startDate);
-  if (existing?.payment_status === "paid") return;
-  syncCourierEarning(record.subjectId, record.startDate);
+function creditAccounts(restaurantId = "") {
+  return db.prepare(`SELECT r.id AS restaurant_id, r.name AS restaurant_name, COALESCE(SUM(m.amount), 0) AS balance
+    FROM restaurants r LEFT JOIN restaurant_credit_movements m ON m.restaurant_id = r.id
+    ${restaurantId ? "WHERE r.id = ?" : ""} GROUP BY r.id, r.name ORDER BY r.name`).all(...(restaurantId ? [restaurantId] : [])).map((row) => ({
+      restaurantId: row.restaurant_id,
+      restaurantName: row.restaurant_name,
+      balance: Number(row.balance || 0),
+    }));
+}
+
+function validateManagementAdjustment(record) {
+  if (record.recordType !== "courier_adjustment") return;
+  if (record.subjectType !== "courier" || !getCourierById(record.subjectId)) throw httpError(400, "Gecerli kurye secilmelidir.");
+  const date = record.startDate;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) throw httpError(400, "Gecerli islem tarihi zorunludur.");
+  if (!["active", "completed"].includes(record.status || "active")) throw httpError(400, "Gecersiz kayit durumu.");
+}
+
+function mutateManagementRecord(action, recordId, body, adminSession) {
+  return withImmediateTransaction(() => {
+    const row = recordId ? db.prepare("SELECT * FROM management_records WHERE id = ?").get(recordId) : null;
+    if (recordId && !row) throw httpError(404, "Yonetim kaydi bulunamadi.");
+    const before = row ? mapManagementRecord(row) : null;
+    const proposed = action === "delete" ? null : { ...before, ...body,
+      recordType: before?.recordType || body.recordType, subjectType: before?.subjectType || body.subjectType, subjectId: before?.subjectId || body.subjectId };
+    const affected = new Map();
+    for (const record of [before, proposed]) {
+      if (record?.recordType !== "courier_adjustment") continue;
+      const date = record.startDate || String(record.createdAt || "").slice(0, 10);
+      const key = `${record.subjectId}:${date}`;
+      if (affected.has(key)) continue;
+      const earning = db.prepare("SELECT payment_status FROM courier_earnings WHERE courier_id = ? AND report_date = ?").get(record.subjectId, date);
+      if (earning?.payment_status === "paid") throw httpError(409, "Odenmis donem degistirilemez; acik donemde duzeltme kaydi olusturun.");
+      initializeEarningManualComponents(record.subjectId, date);
+      affected.set(key, { courierId: record.subjectId, date });
+    }
+    let after = null;
+    if (action === "create") after = createManagementRecord(body);
+    else if (action === "update") after = updateManagementRecord(recordId, body);
+    else db.prepare("DELETE FROM management_records WHERE id = ?").run(recordId);
+    for (const { courierId, date } of affected.values()) syncCourierEarning(courierId, date);
+    writeAuditLog({ actorRole: "admin", actorId: adminActorId(adminSession), action: `management_record_${action === "create" ? "created" : action === "update" ? "updated" : "deleted"}`,
+      details: { recordId: after?.id || before?.id, before, after } });
+    return after || before;
+  });
 }
 
 function adminAssignPackageToCourier(packageId, courierId) {
@@ -8211,6 +8297,7 @@ function decorateState(filter = {}) {
     shiftPlans: adminScoped ? getShiftPlans(dayKey()) : [],
     shiftPlanSummary: adminScoped ? summarizeShiftPlans(dayKey()) : [],
     cashReconciliations: adminScoped ? getCashReconciliations(30) : [],
+    creditAccounts: restaurantScoped ? creditAccounts(filter.restaurantId) : adminScoped ? creditAccounts() : [],
     managementRecords: restaurantScoped
       ? getManagementRecords({ subjectType: "restaurant", subjectId: filter.restaurantId })
       : courierScoped
@@ -16570,6 +16657,44 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  const creditRoute = pathname.match(/^\/api\/admin\/restaurants\/([^/]+)\/credits$/);
+  if ((creditRoute || pathname === "/api/restaurant/credits") && ["GET", "POST"].includes(req.method)) {
+    const session = creditRoute ? getAdminSession(req) : getRestaurantSession(req);
+    if (!session) { sendJson(res, 401, { error: "Oturum bulunamadi." }); return; }
+    if (!creditRoute && req.method !== "GET") { sendJson(res, 403, { error: "Yetkisiz islem." }); return; }
+    const restaurantId = creditRoute ? creditRoute[1] : session.restaurant_id;
+    try {
+      if (!creditAccounts(restaurantId).length) throw httpError(404, "Isletme bulunamadi.");
+      if (req.method === "POST") {
+        const { json: body } = await readRequestBody(req);
+        const amount = Number(body.amount);
+        const eventKey = trimmed(body.eventKey);
+        const reason = trimmed(body.reason);
+        if (!Number.isSafeInteger(amount) || !amount || Math.abs(amount) > 1000000 || !reason || reason.length > 1000 || !eventKey || eventKey.length > 100) throw httpError(400, "Tam sayi kontor, aciklama ve islem anahtari zorunludur.");
+        let created = false;
+        withImmediateTransaction(() => {
+          // Locks this owner on PostgreSQL; SQLite uses BEGIN IMMEDIATE.
+          db.prepare("UPDATE restaurants SET name = name WHERE id = ?").run(restaurantId);
+          const existing = db.prepare("SELECT * FROM restaurant_credit_movements WHERE restaurant_id = ? AND event_key = ?").get(restaurantId, eventKey);
+          if (existing) {
+            if (Number(existing.amount) !== amount || existing.reason !== reason) throw httpError(409, "Islem anahtari farkli veriyle kullanildi.");
+            return;
+          }
+          const before = Number(creditAccounts(restaurantId)[0].balance);
+          const after = before + amount;
+          if (!Number.isSafeInteger(after) || after < 0) throw httpError(409, "Yetersiz kontor veya gecersiz bakiye.");
+          db.prepare("INSERT INTO restaurant_credit_movements (id, restaurant_id, event_key, amount, reason, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .run(uid("credit"), restaurantId, eventKey, amount, reason, adminActorId(session), nowIso());
+          writeAuditLog({ actorRole: "admin", actorId: adminActorId(session), restaurantId, action: "restaurant_credit_changed", details: { eventKey, amount, reason, before, after } });
+          created = true;
+        });
+        if (created) broadcastLiveEvent({ type: "workspace-update", restaurantId, message: "Kontor bakiyeniz guncellendi." });
+      }
+      sendJson(res, 200, { account: creditAccounts(restaurantId)[0], movements: db.prepare("SELECT id, amount, reason, created_at FROM restaurant_credit_movements WHERE restaurant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100").all(restaurantId) });
+    } catch (error) { sendJson(res, error.statusCode || 400, { error: error.message }); }
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/api/admin/management-records") {
     const adminSession = getAdminSession(req);
     if (!adminSession) { sendJson(res, 401, { error: "Admin oturumu bulunamadi." }); return; }
@@ -16582,9 +16707,7 @@ async function handleApi(req, res, pathname) {
     if (!adminSession) { sendJson(res, 401, { error: "Admin oturumu bulunamadi." }); return; }
     const { json: body } = await readRequestBody(req);
     try {
-      const managementRecord = createManagementRecord(body);
-      syncManagementRecordAccounting(managementRecord);
-      writeAuditLog({ actorRole: "admin", actorId: adminActorId(adminSession), action: "management_record_created", details: { recordId: managementRecord.id, recordType: managementRecord.recordType, subjectId: managementRecord.subjectId } });
+      const managementRecord = mutateManagementRecord("create", null, body, adminSession);
       broadcastLiveEvent({ type: "workspace-update", courierId: managementRecord.subjectType === "courier" ? managementRecord.subjectId : undefined, restaurantId: managementRecord.subjectType === "restaurant" ? managementRecord.subjectId : undefined, message: `${managementRecord.title} kaydi olusturuldu.` });
       sendJson(res, 201, { ok: true, managementRecord, ...decorateState({ req }) });
     } catch (error) { sendJson(res, error.statusCode || 400, { error: error.message }); }
@@ -16597,9 +16720,7 @@ async function handleApi(req, res, pathname) {
     if (!adminSession) { sendJson(res, 401, { error: "Admin oturumu bulunamadi." }); return; }
     const { json: body } = await readRequestBody(req);
     try {
-      const managementRecord = updateManagementRecord(adminManagementRecordMatch[1], body);
-      syncManagementRecordAccounting(managementRecord);
-      writeAuditLog({ actorRole: "admin", actorId: adminActorId(adminSession), action: "management_record_updated", details: { recordId: managementRecord.id, status: managementRecord.status } });
+      const managementRecord = mutateManagementRecord("update", adminManagementRecordMatch[1], body, adminSession);
       broadcastLiveEvent({ type: "workspace-update", courierId: managementRecord.subjectType === "courier" ? managementRecord.subjectId : undefined, restaurantId: managementRecord.subjectType === "restaurant" ? managementRecord.subjectId : undefined, message: `${managementRecord.title} kaydi guncellendi.` });
       sendJson(res, 200, { ok: true, managementRecord, ...decorateState({ req }) });
     } catch (error) { sendJson(res, error.statusCode || 400, { error: error.message }); }
@@ -16609,12 +16730,9 @@ async function handleApi(req, res, pathname) {
   if (req.method === "DELETE" && adminManagementRecordMatch) {
     const adminSession = getAdminSession(req);
     if (!adminSession) { sendJson(res, 401, { error: "Admin oturumu bulunamadi." }); return; }
-    const currentRecordRow = db.prepare("SELECT * FROM management_records WHERE id = ?").get(adminManagementRecordMatch[1]);
-    const currentRecord = currentRecordRow ? mapManagementRecord(currentRecordRow) : null;
-    const result = db.prepare("DELETE FROM management_records WHERE id = ?").run(adminManagementRecordMatch[1]);
-    if (!result.changes) { sendJson(res, 404, { error: "Yonetim kaydi bulunamadi." }); return; }
-    writeAuditLog({ actorRole: "admin", actorId: adminActorId(adminSession), action: "management_record_deleted", details: { recordId: adminManagementRecordMatch[1] } });
-    syncManagementRecordAccounting(currentRecord);
+    let currentRecord;
+    try { currentRecord = mutateManagementRecord("delete", adminManagementRecordMatch[1], {}, adminSession); }
+    catch (error) { sendJson(res, error.statusCode || 400, { error: error.message }); return; }
     broadcastLiveEvent({ type: "workspace-update", courierId: currentRecord?.subjectType === "courier" ? currentRecord.subjectId : undefined, restaurantId: currentRecord?.subjectType === "restaurant" ? currentRecord.subjectId : undefined, message: `${currentRecord?.title || "Yonetim"} kaydi silindi.` });
     sendJson(res, 200, { ok: true, ...decorateState({ req }) });
     return;

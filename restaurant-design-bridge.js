@@ -297,6 +297,12 @@
     if (search) search.id = "restaurantSearch";
     const phoneButton = [...(main?.querySelectorAll("button") || [])].find((button) => normalize(button.textContent).includes("telefon siparişi ekle"));
     if (phoneButton) phoneButton.id = "addPhoneOrder";
+    const revenueSection = [...document.querySelectorAll("aside nav h3")].find((heading) => normalize(heading.textContent).includes("gelirler"))?.parentElement?.querySelector("ul");
+    if (revenueSection && ![...revenueSection.querySelectorAll("a")].some((link) => normalize(link.textContent).includes("kontör"))) {
+      const item = document.createElement("li");
+      item.innerHTML = '<a class="flex items-center px-3 py-2 text-sm font-medium rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 border-l-4 border-transparent" href="#"><i class="ph ph-coins mr-3 text-lg text-slate-400"></i>Kontör Bakiyesi</a>';
+      revenueSection.appendChild(item);
+    }
     const sidebarLinks = [...document.querySelectorAll("aside a")];
     sidebarLinks.forEach((link) => { link.dataset.route = normalize(link.textContent); link.removeAttribute("href"); link.setAttribute("role", "button"); link.tabIndex = 0; });
     [...(main?.querySelectorAll("header button") || [])].forEach((button) => {
@@ -1383,6 +1389,17 @@
     state.filter = filter; renderOrders(); updateCounters();
   }
 
+  async function creditSummaryModal() {
+    try {
+      const result = await api("/api/restaurant/credits");
+      const account = result.account || {};
+      const movements = result.movements || [];
+      modal("Kontör Bakiyesi", `<div class="zg-report-cards" style="grid-template-columns:1fr"><div class="zg-report-card is-blue"><span>Kullanılabilir kontör</span><strong>${Number(account.balance || 0)}</strong><small>${safe(account.restaurant_name || account.restaurantName || "İşletme")}</small></div></div><div class="zg-modal-subtitle mt-4">Son Hareketler</div><div>${movements.length ? movements.map((item) => `<div class="zg-list-row"><div><b>${Number(item.amount || 0) > 0 ? "+" : ""}${Number(item.amount || 0)} kontör</b><div class="text-xs text-slate-500">${safe(item.reason)} · ${dateTime(item.created_at || item.createdAt)}</div></div></div>`).join("") : '<div class="zg-empty">Henüz kontör hareketi yok.</div>'}</div>`);
+    } catch (error) {
+      toast(error.message, "error");
+    }
+  }
+
   function showRoute(route) {
     document.querySelectorAll("aside a").forEach((link) => link.classList.toggle("zg-sidebar-active", link.dataset.route === route));
     if (route.includes("güncel durum")) return restoreTable("all");
@@ -1399,6 +1416,7 @@
     if (route === "kategoriler") return categoryManagement();
     if (route === "ürünler" || route.includes("menü yönetimi")) return productManagement();
     if (route.includes("hesap rapor")) return reportModal("Hesap Raporları", "summary");
+    if (route.includes("kontör") || route.includes("işletme")) return creditSummaryModal();
     if (route.includes("günlük sipariş raporu")) return reportModal("Günlük Sipariş Raporu", "daily");
     if (route.includes("sipariş detayları")) return reportModal("Sipariş Detayları", "all");
     if (route.includes("sistem dışı rapor")) return reportModal("Sistem Dışı Sipariş Raporu", "outside");

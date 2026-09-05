@@ -58,6 +58,60 @@ test("admin shift, leave, adjustment and zone management persist in the database
     const restaurantRecordB = await fetch(`${baseUrl}/api/admin/management-records`, { method: "POST", headers, body: JSON.stringify({ recordType: "restaurant_pricing", subjectType: "restaurant", subjectId: "rst_management_b", title: "B fiyat kuralı", amount: 20, startDate: date }) });
     assert.equal(restaurantRecordB.status, 201, await restaurantRecordB.text());
 
+    const creditBefore = await (await fetch(`${baseUrl}/api/admin/restaurants/rst_management_a/credits`, { headers })).json();
+    assert.equal(creditBefore.account.balance, 0);
+    const addCredits = await fetch(`${baseUrl}/api/admin/restaurants/rst_management_a/credits`, { method: "POST", headers, body: JSON.stringify({ eventKey: "admin-test-credit-1", amount: 10, reason: "Test kontör yükleme" }) });
+    assert.equal(addCredits.status, 200, await addCredits.text());
+    const repeatedCredits = await fetch(`${baseUrl}/api/admin/restaurants/rst_management_a/credits`, { method: "POST", headers, body: JSON.stringify({ eventKey: "admin-test-credit-1", amount: 10, reason: "Test kontör yükleme" }) });
+    assert.equal(repeatedCredits.status, 200, await repeatedCredits.text());
+    assert.equal(db.prepare("SELECT COALESCE(SUM(amount), 0) AS balance FROM restaurant_credit_movements WHERE restaurant_id = ?").get("rst_management_a").balance, 10);
+    const conflictingCredit = await fetch(`${baseUrl}/api/admin/restaurants/rst_management_a/credits`, { method: "POST", headers, body: JSON.stringify({ eventKey: "admin-test-credit-1", amount: 11, reason: "Farklı veri" }) });
+    assert.equal(conflictingCredit.status, 409);
+    const spendCredits = await fetch(`${baseUrl}/api/admin/restaurants/rst_management_a/credits`, { method: "POST", headers, body: JSON.stringify({ eventKey: "admin-test-credit-2", amount: -3, reason: "Test kullanım" }) });
+    assert.equal(spendCredits.status, 200, await spendCredits.text());
+    const overspendCredits = await fetch(`${baseUrl}/api/admin/restaurants/rst_management_b/credits`, { method: "POST", headers, body: JSON.stringify({ eventKey: "admin-test-credit-3", amount: -1, reason: "Negatif bakiye engeli" }) });
+    assert.equal(overspendCredits.status, 409);
+    const restaurantCredits = await (await fetch(`${baseUrl}/api/restaurant/credits`, { headers: { Authorization: "Bearer restaurant-management-token" } })).json();
+    assert.equal(restaurantCredits.account.restaurantId, "rst_management_a");
+    assert.equal(restaurantCredits.account.balance, 7);
+    const restaurantWrite = await fetch(`${baseUrl}/api/restaurant/credits`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer restaurant-management-token" }, body: JSON.stringify({ eventKey: "restaurant-write", amount: 1, reason: "Yetkisiz" }) });
+    assert.equal(restaurantWrite.status, 403);
+    const bootstrapWithCredits = await (await fetch(`${baseUrl}/api/admin/bootstrap?limit=250&cursor=0`, { headers })).json();
+    const creditAccountA = bootstrapWithCredits.creditAccounts.find((item) => item.restaurantId === "rst_management_a");
+    assert.equal(creditAccountA.balance, 7);
+
+    // Regression: negative penalties must survive parsing and every mutation
+    // must replace their previous effect, not accumulate it.
+    const currentTotal = () => db.prepare("SELECT total_payable FROM courier_earnings WHERE courier_id = ? AND report_date = ?").get("cr_management", date).total_payable;
+    const penaltyResponse = await fetch(`${baseUrl}/api/admin/management-records`, { method: "POST", headers, body: JSON.stringify({ recordType: "courier_adjustment", subjectType: "courier", subjectId: "cr_management", title: "Teslim cezası", amount: -500, startDate: date }) });
+    const penalty = await penaltyResponse.json();
+    assert.equal(penaltyResponse.status, 201, penalty.error);
+    assert.equal(penalty.managementRecord.amount, -500);
+    assert.equal(currentTotal(), -375);
+    const penaltyUrl = `${baseUrl}/api/admin/management-records/${penalty.managementRecord.id}`;
+    const edited = await fetch(penaltyUrl, { method: "PATCH", headers, body: JSON.stringify({ amount: -200 }) });
+    assert.equal(edited.status, 200, await edited.text());
+    assert.equal(currentTotal(), -75);
+    const tomorrow = new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
+    const moved = await fetch(penaltyUrl, { method: "PATCH", headers, body: JSON.stringify({ startDate: tomorrow }) });
+    assert.equal(moved.status, 200, await moved.text());
+    assert.equal(currentTotal(), 125);
+    assert.equal(db.prepare("SELECT total_payable FROM courier_earnings WHERE courier_id = ? AND report_date = ?").get("cr_management", tomorrow).total_payable, -200);
+    const removed = await fetch(penaltyUrl, { method: "DELETE", headers });
+    assert.equal(removed.status, 200, await removed.text());
+    assert.equal(db.prepare("SELECT total_payable FROM courier_earnings WHERE courier_id = ? AND report_date = ?").get("cr_management", tomorrow).total_payable, 0);
+    assert.equal(currentTotal(), 125);
+    const invalid = await fetch(`${baseUrl}/api/admin/management-records`, { method: "POST", headers, body: JSON.stringify({ recordType: "courier_adjustment", subjectType: "courier", subjectId: "missing", title: "Invalid", amount: -50, startDate: date }) });
+    assert.equal(invalid.status, 400);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM management_records WHERE subject_id = 'missing'").get().n, 0);
+    const forbidden = await fetch(`${baseUrl}/api/admin/management-records`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer courier-management-token" }, body: JSON.stringify({ title: "forbidden" }) });
+    assert.equal(forbidden.status, 401);
+    // A closed earning must not be silently rewritten by a new management entry.
+    db.prepare("UPDATE courier_earnings SET payment_status = 'paid' WHERE courier_id = ? AND report_date = ?").run("cr_management", tomorrow);
+    const closed = await fetch(`${baseUrl}/api/admin/management-records`, { method: "POST", headers, body: JSON.stringify({ recordType: "courier_adjustment", subjectType: "courier", subjectId: "cr_management", title: "Closed period", amount: -20, startDate: tomorrow }) });
+    assert.equal(closed.status, 409);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM management_records WHERE title = 'Closed period'").get().n, 0);
+
     const courierWorkspaceResponse = await fetch(`${baseUrl}/api/courier/me`, { headers: { Authorization: "Bearer courier-management-token" } });
     const courierWorkspace = await courierWorkspaceResponse.json();
     assert.equal(courierWorkspaceResponse.status, 200, courierWorkspace.error);

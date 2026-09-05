@@ -304,10 +304,10 @@
     const count = (state.data.notifications || []).length; badge.textContent = count; badge.hidden = count === 0;
     const unmatchedCount = unmatchedOrders().filter((order) => !order.isResolved).length;
     if (refs.unmatchedMenuBadge) refs.unmatchedMenuBadge.textContent = String(unmatchedCount);
-    const creditRecords = (state.data?.managementRecords || []).filter((item) => item.recordType === "credit_package" && item.status !== "completed");
+    const creditBalance = (state.data?.creditAccounts || []).reduce((sum, item) => sum + Number(item.balance || 0), 0);
     if (refs.creditCount) {
-      refs.creditCount.textContent = String(creditRecords.length);
-      refs.creditCount.title = `${creditRecords.length} aktif paket/kontör işlemi`;
+      refs.creditCount.textContent = String(creditBalance);
+      refs.creditCount.title = `${creditBalance} kullanılabilir işletme kontörü`;
     }
   }
 
@@ -754,6 +754,45 @@
     });
   }
 
+  async function creditManagement(title = "İşletme Paket ve Kontör İşlemleri") {
+    const accounts = state.data?.creditAccounts || [];
+    const selectedId = accounts[0]?.restaurantId || "";
+    const render = async (restaurantId = selectedId) => {
+      const account = accounts.find((item) => item.restaurantId === restaurantId) || accounts[0] || {};
+      let movements = [];
+      if (account.restaurantId) {
+        try {
+          const result = await api(`/api/admin/restaurants/${encodeURIComponent(account.restaurantId)}/credits`);
+          movements = result.movements || [];
+          const index = state.data.creditAccounts.findIndex((item) => item.restaurantId === account.restaurantId);
+          if (index >= 0 && result.account) state.data.creditAccounts[index] = result.account;
+          Object.assign(account, result.account || {});
+        } catch (error) {
+          toast(error.message, "error");
+        }
+      }
+      const options = accounts.map((item) => `<option value="${esc(item.restaurantId)}" ${item.restaurantId === account.restaurantId ? "selected" : ""}>${esc(item.restaurantName)} · ${Number(item.balance || 0)} kontör</option>`).join("");
+      modal(title, `<form data-credit-form class="da-grid"><label class="da-field full"><span>İşletme</span><select name="restaurantId" required>${options}</select></label><div class="da-kpi full"><div><strong>${Number(account.balance || 0)}</strong><span>Mevcut kontör</span></div></div><label class="da-field"><span>Kontör değişimi</span><input name="amount" type="number" step="1" required placeholder="+100 veya -10"></label><label class="da-field"><span>Açıklama</span><input name="reason" required placeholder="Paket yükleme, düzeltme, iade"></label><div class="da-actions"><button class="da-primary">Kontörü İşle</button></div></form><div class="da-route-title mt-5">Son Hareketler</div><div class="da-list">${movements.length ? movements.map((item) => `<div class="da-list-row"><div><b>${Number(item.amount || 0) > 0 ? "+" : ""}${Number(item.amount || 0)} kontör</b><small>${esc(item.reason)} · ${dateTime(item.created_at || item.createdAt)}</small></div></div>`).join("") : '<div class="da-empty">Bu işletme için kontör hareketi yok.</div>'}</div>`, (root) => {
+        root.querySelector('[name="restaurantId"]').addEventListener("change", (event) => render(event.target.value));
+        root.querySelector("[data-credit-form]").addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const form = Object.fromEntries(new FormData(event.currentTarget));
+          const eventKey = `admin-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          try {
+            await api(`/api/admin/restaurants/${encodeURIComponent(form.restaurantId)}/credits`, { method: "POST", body: JSON.stringify({ amount: Number(form.amount), reason: form.reason, eventKey }) });
+            await load(true);
+            toast("Kontör bakiyesi güncellendi.", "success");
+            creditManagement(title);
+          } catch (error) {
+            toast(error.message, "error");
+          }
+        });
+      });
+    };
+    if (!accounts.length) return modal(title, '<div class="da-empty">Kayıtlı işletme bulunamadı.</div>');
+    await render(selectedId);
+  }
+
   function cashManagement(title = "Kurye Tahsilat Mutabakatı") {
     const items = state.data?.cashReconciliations || [];
     modal(title, `<div class="da-list">${items.length ? items.map((item) => `<form class="da-list-row" data-cash-id="${esc(item.id)}"><div><b>${esc(item.courierName)}</b><small>${esc(item.reportDate)} · Beklenen ${money(item.expectedCash)} · Fark ${money(item.variance)}</small></div><div class="da-list-actions"><input name="reportedCash" type="number" step="0.01" value="${Number(item.reportedCash || 0)}" class="w-28 border rounded p-2"><select name="status" class="border rounded p-2"><option value="pending" ${item.status === "pending" ? "selected" : ""}>Bekliyor</option><option value="approved" ${item.status === "approved" ? "selected" : ""}>Onaylandı</option><option value="rejected" ${item.status === "rejected" ? "selected" : ""}>Reddedildi</option></select><input name="adminNote" value="${esc(item.adminNote)}" placeholder="Admin notu" class="border rounded p-2"><button>Kaydet</button></div></form>`).join("") : '<div class="da-empty">Nakit mutabakatı kurye gün sonu yaptığında otomatik oluşur.</div>'}</div>`, (root) => root.querySelectorAll("[data-cash-id]").forEach((form) => form.addEventListener("submit", async (event) => { event.preventDefault(); try { absorb(await api(`/api/admin/cash-reconciliations/${encodeURIComponent(form.dataset.cashId)}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form))) })); toast("Nakit mutabakatı kaydedildi.", "success"); cashManagement(title); } catch (error) { toast(error.message, "error"); } })));
@@ -986,7 +1025,7 @@
       "kurye özel ücretlendirme": () => recordManagement({ type: "courier_special_pricing", subject: "courier", title: "Kurye Özel Ücretlendirme", placeholder: "Özel ücret kuralı", amount: true, dates: true }),
       "işletme ücretlendirme": () => recordManagement({ type: "restaurant_pricing", subject: "restaurant", title: "İşletme Ücretlendirme", placeholder: "İşletme ücret kuralı", amount: true, dates: true }),
       "restoran fiyatlandırması": () => recordManagement({ type: "restaurant_menu_pricing", subject: "restaurant", title: "Restoran Fiyatlandırması", placeholder: "Restoran fiyat planı", amount: true, dates: true }),
-      "paket satın alma": () => recordManagement({ type: "credit_package", subject: "restaurant", title: "İşletme Paket Satın Alma", placeholder: "Paket / kontör açıklaması", amount: true, dates: true }),
+      "paket satın alma": () => creditManagement("İşletme Paket Satın Alma"),
       "sistem dışı onaylar": () => recordManagement({ type: "external_approval", subject: "courier", title: "Sistem Dışı İşlem Onayları", placeholder: "Onay kaydı", amount: true, dates: true }),
       "sistem dışı rapor": () => reportModal("Sistem Dışı İşlemler", packages().filter((pkg) => ["external_manual", "manual", "admin_manual"].includes(pkg.source))),
       "sistem dışı dahil kurye kazanç": () => courierPackageEarningsReport("Sistem Dışı Dahil Kurye Kazanç", packages()),
@@ -1008,7 +1047,7 @@
     if (route.includes("havuz yetki")) return courierManagement();
     if (route.includes("bölge tanımlama")) return zoneManagement();
     if (route.includes("restoran fiyatlandır") || route.includes("işletme ücretlendirme") || route.includes("bölge fiyatlandır")) return recordManagement({ type: "restaurant_pricing", subject: "restaurant", title: "İşletme ve Bölge Fiyatlandırması", placeholder: "Fiyat kuralı", amount: true, dates: true });
-    if (route.includes("paket satın alma") || route.includes("kontör")) return recordManagement({ type: "credit_package", subject: "restaurant", title: "İşletme Paket ve Kontör İşlemleri", placeholder: "Paket / kontör açıklaması", amount: true, dates: true });
+    if (route.includes("paket satın alma") || route.includes("kontör")) return creditManagement("İşletme Paket ve Kontör İşlemleri");
     if (route.includes("sistem dışı onay")) return recordManagement({ type: "external_approval", subject: "courier", title: "Sistem Dışı İşlem Onayları", placeholder: "Onay kaydı", amount: true, dates: true });
     if (route.includes("kurye raporu") || route.includes("kurye performans") || route.includes("kurye kazanç")) return courierPerformanceManagement();
     if (route.includes("tahsilat") || route.includes("nakit")) return cashManagement();
