@@ -126,12 +126,10 @@ const RATE_LIMITS = {
 };
 const DEFAULT_PAGE_LIMIT = 100;
 const MAX_PAGE_LIMIT = 200;
-const COURIER_PUSH_EVENT_TYPES = new Set(["package-assigned", "package-override", "package-reassign"]);
-const RESTAURANT_PUSH_EVENT_TYPES = new Set(["package-created", "platform-order-pending", "integration-order", "order:new", "restaurant-push-test"]);
 const WEB_PUSH_DEDUPE_MS = 90 * 1000;
 const recentWebPushes = new Map();
 const WEB_PUSH_SETTINGS_ID = "courier_web_push_vapid";
-const WEB_PUSH_SUBJECT = trimmed(process.env.DELIVERA_VAPID_SUBJECT) || "mailto:bildirim@paketdelivera.app";
+const WEB_PUSH_SUBJECT = trimmed(process.env.DELIVERA_VAPID_SUBJECT) || "mailto:bildirim@restomap.com.tr";
 
 const DEFAULT_ZONES = ["Akdeniz", "Yenisehir", "Mezitli", "Toroslar", "Tarsus", "Erdemli"];
 const SUPPORTED_PLATFORMS = ["Trendyol Yemek", "Yemeksepeti", "Getir Yemek", "Migros Yemek", "POS"];
@@ -331,6 +329,8 @@ const STATIC_FILES = {
   "/manifest.webmanifest": "manifest.webmanifest",
   "/privacy.html": "privacy.html",
   "/shared.js": "shared.js",
+  "/push-client.js": "push-client.js",
+  "/vendor/capacitor-core.js": "node_modules/@capacitor/core/dist/index.js",
   "/system-curtain.js": "system-curtain.js",
   "/system-curtain-control.js": "system-curtain-control.js",
   "/system-curtain-control.css": "system-curtain-control.css",
@@ -1371,6 +1371,74 @@ db.exec(`
 
 if (!db.prepare("PRAGMA table_info(notification_logs)").all().some((row) => row.name === "read_at")) {
   db.exec("ALTER TABLE notification_logs ADD COLUMN read_at TEXT");
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS courier_push_subscriptions (
+    id TEXT PRIMARY KEY,
+    courier_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    subscription_json TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'web',
+    device_label TEXT,
+    last_success_at TEXT,
+    last_failure_at TEXT,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (courier_id) REFERENCES couriers(id)
+  );
+  CREATE TABLE IF NOT EXISTS restaurant_push_subscriptions (
+    id TEXT PRIMARY KEY,
+    restaurant_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    subscription_json TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'web',
+    device_label TEXT,
+    last_success_at TEXT,
+    last_failure_at TEXT,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (restaurant_id) REFERENCES restaurants(id)
+  );
+  CREATE TABLE IF NOT EXISTS admin_push_subscriptions (
+    id TEXT PRIMARY KEY,
+    admin_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    subscription_json TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'web',
+    device_label TEXT,
+    last_success_at TEXT,
+    last_failure_at TEXT,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (admin_id) REFERENCES admins(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_courier_push_subscriptions_courier
+  ON courier_push_subscriptions (courier_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_restaurant_push_subscriptions_restaurant
+  ON restaurant_push_subscriptions (restaurant_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_admin_push_subscriptions_admin
+  ON admin_push_subscriptions (admin_id, updated_at DESC);
+`);
+
+for (const tableName of ["courier_push_subscriptions", "restaurant_push_subscriptions", "admin_push_subscriptions"]) {
+  const columns = new Set(db.prepare(`PRAGMA table_info(${tableName})`).all().map((row) => row.name));
+  [
+    ["platform", "TEXT NOT NULL DEFAULT 'web'"],
+    ["device_label", "TEXT"],
+    ["last_success_at", "TEXT"],
+    ["last_failure_at", "TEXT"],
+    ["failure_count", "INTEGER NOT NULL DEFAULT 0"],
+    ["last_error", "TEXT"],
+  ].forEach(([columnName, definition]) => {
+    if (!columns.has(columnName)) db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  });
 }
 
 const zoneInsert = db.prepare("INSERT OR IGNORE INTO zones (name) VALUES (?)");
@@ -3984,6 +4052,11 @@ function ensureCourierPushConfigured() {
 }
 
 function normalizePushSubscription(value = {}) {
+  if (value.provider === "fcm") {
+    const token = trimmed(value.token);
+    if (!/^[A-Za-z0-9_:.-]{20,4096}$/.test(token)) throw validationError("Gecersiz cihaz tokeni.");
+    return { endpoint: `fcm:${token}`, provider: "fcm", token };
+  }
   const endpoint = trimmed(value.endpoint);
   const p256dh = trimmed(value.keys?.p256dh);
   const auth = trimmed(value.keys?.auth);
@@ -3997,62 +4070,82 @@ function normalizePushSubscription(value = {}) {
   };
 }
 
-function saveCourierPushSubscription(courierId, subscription) {
+function normalizePushMeta(meta = {}) {
+  const platform = trimmed(meta.platform || "web").toLowerCase();
+  return {
+    platform: ["web", "pwa", "android", "ios"].includes(platform) ? platform : "web",
+    deviceLabel: trimmed(meta.deviceLabel || meta.device_label).slice(0, 120),
+  };
+}
+
+function savePushSubscription(tableName, ownerColumn, ownerId, subscription, meta = {}) {
   const normalized = normalizePushSubscription(subscription);
+  const pushMeta = normalizePushMeta(meta);
+  // A provider endpoint belongs to the currently registered account on this device.
+  for (const otherTable of ["admin_push_subscriptions", "courier_push_subscriptions", "restaurant_push_subscriptions"]) {
+    if (otherTable !== tableName) db.prepare(`DELETE FROM ${otherTable} WHERE endpoint = ?`).run(normalized.endpoint);
+  }
   const stamp = nowIso();
   db.prepare(`
-    INSERT INTO courier_push_subscriptions (
-      id, courier_id, endpoint, subscription_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO ${tableName} (
+      id, ${ownerColumn}, endpoint, subscription_json, platform, device_label, failure_count, last_error, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
     ON CONFLICT(endpoint) DO UPDATE SET
-      courier_id = excluded.courier_id,
+      ${ownerColumn} = excluded.${ownerColumn},
       subscription_json = excluded.subscription_json,
+      platform = excluded.platform,
+      device_label = excluded.device_label,
+      failure_count = 0,
+      last_error = NULL,
       updated_at = excluded.updated_at
-  `).run(uid("push"), courierId, normalized.endpoint, json(normalized), stamp, stamp);
+  `).run(uid("push"), ownerId, normalized.endpoint, json(normalized), pushMeta.platform, pushMeta.deviceLabel || null, stamp, stamp);
   return normalized.endpoint;
+}
+
+function deletePushSubscription(tableName, ownerColumn, ownerId, endpoint) {
+  if (!endpoint) return 0;
+  return db.prepare(`DELETE FROM ${tableName} WHERE ${ownerColumn} = ? AND endpoint = ?`)
+    .run(ownerId, trimmed(endpoint)).changes;
+}
+
+function markPushSuccess(tableName, endpoint) {
+  db.prepare(`UPDATE ${tableName} SET last_success_at = ?, failure_count = 0, last_error = NULL, updated_at = ? WHERE endpoint = ?`)
+    .run(nowIso(), nowIso(), endpoint);
+}
+
+function markPushFailure(tableName, endpoint, error) {
+  db.prepare(`UPDATE ${tableName} SET last_failure_at = ?, failure_count = COALESCE(failure_count, 0) + 1, last_error = ?, updated_at = ? WHERE endpoint = ?`)
+    .run(nowIso(), trimmed(error?.message || String(error || "Push delivery failed")).slice(0, 500), nowIso(), endpoint);
+}
+
+function removeInvalidPushSubscription(tableName, endpoint) {
+  db.prepare(`DELETE FROM ${tableName} WHERE endpoint = ?`).run(endpoint);
+}
+
+function saveAdminPushSubscription(adminId, subscription, meta = {}) {
+  return savePushSubscription("admin_push_subscriptions", "admin_id", adminId, subscription, meta);
+}
+
+function deleteAdminPushSubscription(adminId, endpoint) {
+  return deletePushSubscription("admin_push_subscriptions", "admin_id", adminId, endpoint);
+}
+
+function saveCourierPushSubscription(courierId, subscription, meta = {}) {
+  return savePushSubscription("courier_push_subscriptions", "courier_id", courierId, subscription, meta);
 }
 
 function deleteCourierPushSubscription(courierId, endpoint) {
-  if (!endpoint) return;
-  db.prepare("DELETE FROM courier_push_subscriptions WHERE courier_id = ? AND endpoint = ?")
-    .run(courierId, trimmed(endpoint));
+  return deletePushSubscription("courier_push_subscriptions", "courier_id", courierId, endpoint);
 }
 
-function saveRestaurantPushSubscription(restaurantId, subscription) {
-  const normalized = normalizePushSubscription(subscription);
-  const stamp = nowIso();
-  db.prepare(`
-    INSERT INTO restaurant_push_subscriptions (
-      id, restaurant_id, endpoint, subscription_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(endpoint) DO UPDATE SET
-      restaurant_id = excluded.restaurant_id,
-      subscription_json = excluded.subscription_json,
-      updated_at = excluded.updated_at
-  `).run(uid("push"), restaurantId, normalized.endpoint, json(normalized), stamp, stamp);
-  return normalized.endpoint;
+function saveRestaurantPushSubscription(restaurantId, subscription, meta = {}) {
+  return savePushSubscription("restaurant_push_subscriptions", "restaurant_id", restaurantId, subscription, meta);
 }
 
 function deleteRestaurantPushSubscription(restaurantId, endpoint) {
-  if (!endpoint) return;
-  db.prepare("DELETE FROM restaurant_push_subscriptions WHERE restaurant_id = ? AND endpoint = ?")
-    .run(restaurantId, trimmed(endpoint));
+  return deletePushSubscription("restaurant_push_subscriptions", "restaurant_id", restaurantId, endpoint);
 }
 
-function courierPushPayload(event) {
-  const pkg = event.packageId ? getPackageById(event.packageId) : null;
-  const trackingNo = pkg?.trackingNo || pkg?.externalOrderNo || event.packageId || "Yeni paket";
-  const restaurantName = pkg?.restaurantName || "RESTOMAP";
-  const address = pkg?.deliveryAddress || pkg?.address || pkg?.customerAddress || "Paket detaylarini acmak icin dokunun.";
-  const packageId = pkg?.id || event.packageId || "";
-  return {
-    title: `Yeni Paket - ${trackingNo}`,
-    body: `${restaurantName} - ${address}`,
-    packageId,
-    tag: packageId ? `delivera-package-${packageId}` : `delivera-courier-${event.courierId}`,
-    url: packageId ? `/courier.html?package=${encodeURIComponent(packageId)}` : "/courier.html",
-  };
-}
 
 function claimWebPush(key) {
   const now = Date.now();
@@ -4064,127 +4157,41 @@ function claimWebPush(key) {
   return true;
 }
 
-function dispatchCourierPush(event) {
-  if (!event?.courierId || !COURIER_PUSH_EVENT_TYPES.has(event.type)) {
-    return;
-  }
-  const pushKey = `courier:${event.courierId}:${event.packageId || "general"}`;
-  if (!claimWebPush(pushKey)) return;
-
-  let subscriptions = [];
+function dispatchPushEvent(event) {
+  if (!event?.message && !event?.type?.includes("push-test")) return;
+  if (["courier-location", "ping"].includes(event.type)) return;
+  const { createPushDelivery, pushPayload, recipients } = require("./services/pushDelivery");
   try {
     ensureCourierPushConfigured();
-    subscriptions = db.prepare(`
-      SELECT endpoint, subscription_json
-      FROM courier_push_subscriptions
-      WHERE courier_id = ?
-    `).all(event.courierId);
-  } catch (error) {
-    logger.warn("Courier push preparation failed", { courierId: event.courierId, error });
-    return;
-  }
-
-  const payload = JSON.stringify(courierPushPayload(event));
-  subscriptions.forEach((row) => {
-    try {
-      const request = webPush.sendNotification(parseJson(row.subscription_json, {}), payload, {
-        TTL: 300,
-        urgency: "high",
+    for (const role of ["admin", "restaurant", "courier"]) {
+      if (event.type?.includes("push-test") && !event.type.startsWith(role)) continue;
+      if (role === "restaurant" && shouldSuppressRestaurantAlert(event)) continue;
+      const table = `${role}_push_subscriptions`;
+      const ids = recipients(role, event);
+      if (ids && !ids.length) continue;
+      const rows = ids
+        ? db.prepare(`SELECT * FROM ${table} WHERE ${role}_id IN (${ids.map(() => "?").join(",")})`).all(...ids)
+        : db.prepare(`SELECT * FROM ${table}`).all();
+      const deliver = createPushDelivery({
+        active: (row) => Boolean(db.prepare(`SELECT id FROM ${table} WHERE id = ? AND ${role}_id = ? AND subscription_json = ?`).get(row.id, row[`${role}_id`], row.subscription_json)),
+        send: (subscription, payload, options) => subscription.provider === "fcm"
+          ? require("./services/fcmPush").send(subscription, JSON.parse(payload))
+          : webPush.sendNotification(subscription, payload, options),
+        success: (row) => markPushSuccess(table, row.endpoint),
+        failure: (row, error) => markPushFailure(table, row.endpoint, error),
+        invalid: (row) => removeInvalidPushSubscription(table, row.endpoint),
       });
-      Promise.resolve(request).catch((error) => {
-        if ([404, 410].includes(Number(error?.statusCode))) {
-          db.prepare("DELETE FROM courier_push_subscriptions WHERE endpoint = ?").run(row.endpoint);
-          return;
-        }
-        logger.warn("Courier push delivery failed", {
-          courierId: event.courierId,
-          packageId: event.packageId || null,
-          statusCode: error?.statusCode || null,
-          error,
+      for (const row of rows) {
+        const key = JSON.stringify([role, row.id, event.type, event.packageId || event.orderId, event.message, event.status, event.announcementId]);
+        if (!claimWebPush(key)) continue;
+        void deliver(row, pushPayload(role, event)).catch((error) => {
+          logger.warn("Push delivery failed", { role, error });
         });
-      });
-    } catch (error) {
-      logger.warn("Courier push request failed", {
-        courierId: event.courierId,
-        packageId: event.packageId || null,
-        error,
-      });
+      }
     }
-  });
-}
-
-function restaurantPushPayload(event) {
-  const packageId = event.packageId || event.orderId || "";
-  const pkg = packageId ? getPackageById(packageId) : null;
-  if (event.type === "restaurant-push-test") {
-    return {
-      title: "RESTOMAP Bildirim Testi",
-      body: "Bildirimler acik. Yeni siparisler bu cihaza bildirilecek.",
-      packageId: "",
-      tag: `delivera-restaurant-test-${event.restaurantId}`,
-      url: "/restaurant.html",
-    };
-  }
-  const trackingNo = pkg?.trackingNo || pkg?.externalOrderNo || packageId || "Yeni siparis";
-  const platform = pkg?.sourcePlatform || event.platform || "RESTOMAP";
-  const customer = pkg?.recipient || event.customerName || "Yeni musteri siparisi";
-  return {
-    title: `Yeni Siparis - ${trackingNo}`,
-    body: `${platform} - ${customer}. Siparisi acmak icin dokunun.`,
-    packageId,
-    tag: packageId ? `delivera-restaurant-package-${packageId}` : `delivera-restaurant-${event.restaurantId}`,
-    url: packageId ? `/restaurant.html?package=${encodeURIComponent(packageId)}` : "/restaurant.html",
-  };
-}
-
-function dispatchRestaurantPush(event) {
-  if (!event?.restaurantId || !RESTAURANT_PUSH_EVENT_TYPES.has(event.type) || shouldSuppressRestaurantAlert(event)) {
-    return;
-  }
-  const packageId = event.packageId || event.orderId;
-  const pushKey = packageId ? `restaurant:${event.restaurantId}:${packageId}` : "";
-  if (event.type !== "restaurant-push-test" && pushKey && !claimWebPush(pushKey)) return;
-
-  let subscriptions = [];
-  try {
-    ensureCourierPushConfigured();
-    subscriptions = db.prepare(`
-      SELECT endpoint, subscription_json
-      FROM restaurant_push_subscriptions
-      WHERE restaurant_id = ?
-    `).all(event.restaurantId);
   } catch (error) {
-    logger.warn("Restaurant push preparation failed", { restaurantId: event.restaurantId, error });
-    return;
+    logger.warn("Push preparation failed", { error });
   }
-
-  const payload = JSON.stringify(restaurantPushPayload(event));
-  subscriptions.forEach((row) => {
-    try {
-      const request = webPush.sendNotification(parseJson(row.subscription_json, {}), payload, {
-        TTL: 300,
-        urgency: "high",
-      });
-      Promise.resolve(request).catch((error) => {
-        if ([404, 410].includes(Number(error?.statusCode))) {
-          db.prepare("DELETE FROM restaurant_push_subscriptions WHERE endpoint = ?").run(row.endpoint);
-          return;
-        }
-        logger.warn("Restaurant push delivery failed", {
-          restaurantId: event.restaurantId,
-          packageId: event.packageId || event.orderId || null,
-          statusCode: error?.statusCode || null,
-          error,
-        });
-      });
-    } catch (error) {
-      logger.warn("Restaurant push request failed", {
-        restaurantId: event.restaurantId,
-        packageId: event.packageId || event.orderId || null,
-        error,
-      });
-    }
-  });
 }
 
 function sendJson(res, statusCode, payload) {
@@ -4277,8 +4284,7 @@ function broadcastLiveEvent(event) {
       closeLiveStream(stream.id);
     }
   });
-  dispatchCourierPush(event);
-  dispatchRestaurantPush(event);
+  dispatchPushEvent(event);
 }
 
 function openLiveStream(req, res, audience) {
@@ -13195,7 +13201,9 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === "POST" && pathname === "/api/admin/logout") {
+    const session = getAdminSession(req);
     const { json: body } = await readRequestBody(req);
+    if (session && body.pushEndpoint) deleteAdminPushSubscription(session.admin_id, body.pushEndpoint);
     const { refreshToken } = validateRefreshDraft(body);
     revokeAccessToken("admin_sessions", getBearerToken(req));
     db.prepare("DELETE FROM refresh_tokens WHERE actor_role = ? AND token_hash = ?").run("admin", hashOpaqueToken(refreshToken));
@@ -15776,13 +15784,29 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname.startsWith("/api/admin/push/")) {
+    const session = getAdminSession(req);
+    if (!session) { sendJson(res, 401, { error: "Admin oturumu bulunamadi." }); return; }
+    if (req.method === "GET" && pathname === "/api/admin/push/public-key") {
+    sendJson(res, 200, { publicKey: ensureCourierPushConfigured().publicKey, fcmConfigured: Boolean(process.env.RESTOMAP_FIREBASE_SERVICE_ACCOUNT || process.env.GOOGLE_APPLICATION_CREDENTIALS) });
+      return;
+    }
+    if (["POST", "DELETE"].includes(req.method) && pathname === "/api/admin/push/subscriptions") {
+      const { json: body } = await readRequestBody(req);
+      if (req.method === "POST") saveAdminPushSubscription(session.admin_id, body.subscription || body, body);
+      else deleteAdminPushSubscription(session.admin_id, body.endpoint);
+      sendJson(res, req.method === "POST" ? 201 : 200, { ok: true });
+      return;
+    }
+  }
+
   if (req.method === "GET" && pathname === "/api/courier/push/public-key") {
     const session = getCourierSession(req);
     if (!session) {
       sendJson(res, 401, { error: "Kurye oturumu bulunamadi." });
       return;
     }
-    sendJson(res, 200, { publicKey: ensureCourierPushConfigured().publicKey });
+    sendJson(res, 200, { publicKey: ensureCourierPushConfigured().publicKey, fcmConfigured: Boolean(process.env.RESTOMAP_FIREBASE_SERVICE_ACCOUNT || process.env.GOOGLE_APPLICATION_CREDENTIALS) });
     return;
   }
 
@@ -15792,7 +15816,7 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 401, { error: "Restoran oturumu bulunamadi." });
       return;
     }
-    sendJson(res, 200, { publicKey: ensureCourierPushConfigured().publicKey });
+    sendJson(res, 200, { publicKey: ensureCourierPushConfigured().publicKey, fcmConfigured: Boolean(process.env.RESTOMAP_FIREBASE_SERVICE_ACCOUNT || process.env.GOOGLE_APPLICATION_CREDENTIALS) });
     return;
   }
 
@@ -15803,7 +15827,7 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const { json: body } = await readRequestBody(req);
-    saveRestaurantPushSubscription(session.restaurant_id, body.subscription || body);
+    saveRestaurantPushSubscription(session.restaurant_id, body.subscription || body, body);
     sendJson(res, 201, { ok: true });
     return;
   }
@@ -15842,7 +15866,7 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const { json: body } = await readRequestBody(req);
-    saveCourierPushSubscription(session.courier_id, body.subscription || body);
+    saveCourierPushSubscription(session.courier_id, body.subscription || body, body);
     sendJson(res, 201, { ok: true });
     return;
   }
@@ -16480,6 +16504,8 @@ async function handleApi(req, res, pathname) {
       courierId: session.courier_id,
       restaurantId: target.restaurant_id,
       message: `Paket durumu ${nextStatus} oldu.`,
+      packageId: target.id,
+      status: nextStatus,
     });
     sendJson(res, 200, workspace || { courier: null, packages: [] });
     return;
@@ -16932,7 +16958,9 @@ async function handleApi(req, res, pathname) {
     });
     broadcastLiveEvent({
       type: "workspace-update",
-      message: `${title} duyurusu yayinlandi.`,
+      message: `${title}: ${message}`,
+      announcementId,
+      targetRole,
     });
     sendJson(res, 200, {
       ...decorateState(),
@@ -17520,6 +17548,8 @@ async function handleApi(req, res, pathname) {
       restaurantId: target.restaurant_id,
       courierId: target.assigned_courier_id || null,
       message: `Paket durumu ${nextStatus} olarak guncellendi.`,
+      packageId: target.id,
+      status: nextStatus,
     });
     sendJson(res, 200, {
       ...decorateState(),

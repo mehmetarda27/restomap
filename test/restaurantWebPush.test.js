@@ -176,8 +176,8 @@ test("restaurant web push subscription is authenticated, isolated and idempotent
     const workerSource = await workerResponse.text();
     assert.match(workerSource, /payload\.url/);
     assert.match(workerSource, /targetPath\.startsWith\("\/restaurant"\)/);
-    assert.match(workerSource, /if \(visiblePanel && !isRestaurantNotification\) return/);
-    assert.match(workerSource, /Hatırlatma:/);
+    assert.match(workerSource, /if \(visiblePanel\) return/);
+    assert.doesNotMatch(workerSource, /Hatırlatma:/);
     const panelResponse = await fetch(`${baseUrl}/restaurant.html`);
     assert.equal(panelResponse.status, 200);
     assert.match(await panelResponse.text(), /restaurant-design-bridge\.js/);
@@ -185,7 +185,7 @@ test("restaurant web push subscription is authenticated, isolated and idempotent
     assert.equal(bridgeResponse.status, 200);
     const bridgeSource = await bridgeResponse.text();
     assert.match(bridgeSource, /restaurantEnablePushButton/);
-    assert.match(bridgeSource, /\/api\/restaurant\/push\/subscriptions/);
+    assert.match(bridgeSource, /registerPush\("restaurant"/);
     assert.match(bridgeSource, /deliveraRestaurantKioskPrintedOrders/);
     assert.match(bridgeSource, /allowKioskPrint: hadData/);
 

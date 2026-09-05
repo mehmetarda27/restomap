@@ -630,6 +630,15 @@ public class MainActivity extends BridgeActivity {
         }
 
         @JavascriptInterface
+        public void setPushEnabled(boolean enabled) {
+            activity.runOnUiThread(() -> {
+                if (!activity.isTrustedCourierPage()) return;
+                activity.getSharedPreferences(DeliveraCourierService.PREFS, MODE_PRIVATE)
+                    .edit().putBoolean("fcm_enabled", enabled).apply();
+            });
+        }
+
+        @JavascriptInterface
         public void syncSession(String accessToken, String refreshToken) {
             String token = accessToken == null ? "" : accessToken.trim();
             String refresh = refreshToken == null ? "" : refreshToken.trim();

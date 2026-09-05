@@ -14,7 +14,7 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "RESTOMAP - Yeni Paket";
   const options = {
     body: payload.body || "Yeni bir paketiniz var.",
-    tag: payload.tag || "delivera-new-package",
+    tag: payload.tag || "restomap-notification",
     data: {
       url: payload.url || COURIER_PAGE,
       packageId: payload.packageId || "",
@@ -27,7 +27,6 @@ self.addEventListener("push", (event) => {
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const targetPath = new URL(options.data.url, self.location.origin).pathname;
-    const isRestaurantNotification = targetPath.startsWith("/restaurant");
     const visiblePanel = windows.some((client) => {
       if (client.visibilityState !== "visible") return false;
       const clientPath = new URL(client.url).pathname;
@@ -36,20 +35,9 @@ self.addEventListener("push", (event) => {
       return clientPath === targetPath;
     });
 
-    // Kurye paneli açıkken ekran içi kabul penceresi yeterlidir. Restoran
-    // bildirimi ise siparişin kaçmaması için panel açık olsa da mutlaka görünür.
-    if (visiblePanel && !isRestaurantNotification) return;
-    const notificationOptions = visiblePanel && isRestaurantNotification
-      ? { ...options, silent: true }
-      : options;
-    await self.registration.showNotification(title, notificationOptions);
-    if (isRestaurantNotification && payload.packageId) {
-      await new Promise((resolve) => setTimeout(resolve, 10 * 1000));
-      await self.registration.showNotification(title, {
-        ...notificationOptions,
-        body: `Hatırlatma: ${options.body}`,
-      });
-    }
+    // Foreground panels render SSE/in-app alerts themselves.
+    if (visiblePanel) return;
+    await self.registration.showNotification(title, options);
   })());
 });
 
@@ -58,7 +46,8 @@ self.addEventListener("notificationclick", (event) => {
   const targetUrl = new URL(event.notification.data?.url || COURIER_PAGE, self.location.origin).href;
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    const existing = windows.find((client) => new URL(client.url).pathname === COURIER_PAGE);
+    if (new URL(targetUrl).origin !== self.location.origin) return;
+    const existing = windows.find((client) => new URL(client.url).pathname === new URL(targetUrl).pathname);
     if (existing) {
       await existing.navigate(targetUrl);
       return existing.focus();

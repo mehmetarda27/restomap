@@ -232,6 +232,7 @@ public class DeliveraCourierService extends Service implements LocationListener 
     }
 
     private void processWorkspaceAlerts(JSONObject workspace) {
+        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("fcm_enabled", false)) return;
         JSONArray notifications = workspace.optJSONArray("notifications");
         Set<String> currentNotificationIds = new HashSet<>();
         if (notifications != null) {

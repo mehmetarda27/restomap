@@ -133,6 +133,33 @@ test("courier web push subscription is authenticated, idempotent and removable",
       body: JSON.stringify({ username: adminUsername, password: adminPassword }),
     });
     assert.equal(adminLogin.response.status, 200);
+    const adminHeaders = { Authorization: `Bearer ${adminLogin.body.token}` };
+    const adminDenied = await jsonRequest(baseUrl, "/api/admin/push/public-key", { headers });
+    assert.equal(adminDenied.response.status, 401);
+    const adminKey = await jsonRequest(baseUrl, "/api/admin/push/public-key", { headers: adminHeaders });
+    assert.equal(adminKey.response.status, 200);
+    assert.equal(adminKey.body.publicKey, publicKeyResult.body.publicKey);
+    for (const device of ["one", "two", "one"]) {
+      const result = await jsonRequest(baseUrl, "/api/admin/push/subscriptions", {
+        method: "POST", headers: adminHeaders,
+        body: JSON.stringify({ subscription: { ...subscription, endpoint: `https://push.example.test/admin/${device}` }, platform: "pwa", deviceLabel: device }),
+      });
+      assert.equal(result.response.status, 201);
+    }
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM admin_push_subscriptions").get().n, 2);
+    assert.equal(db.prepare("SELECT platform FROM admin_push_subscriptions LIMIT 1").get().platform, "pwa");
+    const crossRoleDelete = await jsonRequest(baseUrl, "/api/admin/push/subscriptions", {
+      method: "DELETE", headers, body: JSON.stringify({ endpoint: "https://push.example.test/admin/one" }),
+    });
+    assert.equal(crossRoleDelete.response.status, 401);
+    const logout = await jsonRequest(baseUrl, "/api/admin/logout", {
+      method: "POST", headers: adminHeaders,
+      body: JSON.stringify({ refreshToken: adminLogin.body.refreshToken, pushEndpoint: "https://push.example.test/admin/one" }),
+    });
+    assert.equal(logout.response.status, 200);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM admin_push_subscriptions").get().n, 1);
+    const newLogin = await jsonRequest(baseUrl, "/api/admin/login", { method: "POST", body: JSON.stringify({ username: adminUsername, password: adminPassword }) });
+    adminLogin.body.token = newLogin.body.token;
     const assigned = await jsonRequest(baseUrl, "/api/admin/packages/pkg_push_test/override", {
       method: "POST",
       headers: { Authorization: `Bearer ${adminLogin.body.token}` },
@@ -153,7 +180,7 @@ test("courier web push subscription is authenticated, idempotent and removable",
     const workerSource = await workerResponse.text();
     assert.match(workerSource, /self\.addEventListener\("push"/);
     assert.match(workerSource, /client\.visibilityState !== "visible"/);
-    assert.match(workerSource, /if \(visiblePanel && !isRestaurantNotification\) return/);
+    assert.match(workerSource, /if \(visiblePanel\) return/);
 
     const removed = await jsonRequest(baseUrl, "/api/courier/push/subscriptions", {
       method: "DELETE",
@@ -161,6 +188,16 @@ test("courier web push subscription is authenticated, idempotent and removable",
       body: JSON.stringify({ endpoint: subscription.endpoint }),
     });
     assert.equal(removed.response.status, 200);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM courier_push_subscriptions WHERE courier_id = ?").get(courierId).count, 0);
+    const nativeToken = "restomap-test-fcm-token-1234567890";
+    const nativeSaved = await jsonRequest(baseUrl, "/api/courier/push/subscriptions", {
+      method: "POST", headers, body: JSON.stringify({ subscription: { provider: "fcm", token: nativeToken }, platform: "android" }),
+    });
+    assert.equal(nativeSaved.response.status, 201);
+    const nativeRow = db.prepare("SELECT * FROM courier_push_subscriptions WHERE courier_id = ?").get(courierId);
+    assert.equal(nativeRow.platform, "android");
+    assert.equal(JSON.parse(nativeRow.subscription_json).token, nativeToken);
+    await jsonRequest(baseUrl, "/api/courier/push/subscriptions", { method: "DELETE", headers, body: JSON.stringify({ endpoint: `fcm:${nativeToken}` }) });
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM courier_push_subscriptions WHERE courier_id = ?").get(courierId).count, 0);
     db.close();
   } finally {

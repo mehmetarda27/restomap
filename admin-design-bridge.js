@@ -76,6 +76,10 @@
   async function logout() {
     const refreshToken = state.refreshToken;
     const token = state.token;
+    clearAuth();
+    if (navigator.serviceWorker || window.Capacitor?.isNativePlatform?.()) {
+      try { const { removePushWithToken } = await import("/push-client.js"); await removePushWithToken("admin", token); } catch {}
+    }
     try {
       if (refreshToken) {
         const headers = { "Content-Type": "application/json" };
@@ -1111,7 +1115,10 @@
 
   refs.filterButtons.forEach((button) => button.addEventListener("click", () => restoreOperations(button.dataset.filter)));
   refs.addOrderButton?.addEventListener("click", addOrderModal);
-  refs.notificationButton.addEventListener("click", notificationCenter);
+  refs.notificationButton.addEventListener("click", () => {
+    notificationCenter();
+    if (state.token) import("/push-client.js").then(({ registerPush }) => registerPush("admin", api, true)).catch((error) => toast(error.message, "error"));
+  });
   refs.logoutButton?.addEventListener("click", logout);
   refs.sidebarLinks.forEach((link) => { const activate = (event) => { event.preventDefault(); handleRoute(link.dataset.route); }; link.addEventListener("click", activate); link.addEventListener("keydown", (event) => { if (["Enter", " "].includes(event.key)) activate(event); }); });
   document.querySelectorAll("aside nav button").forEach((button) => button.addEventListener("click", () => { const list = button.nextElementSibling; list?.classList.toggle("hidden"); const icon = button.querySelector(".material-symbols-outlined"); if (icon) icon.textContent = list?.classList.contains("hidden") ? "chevron_right" : "expand_more"; }));
@@ -1120,5 +1127,15 @@
 
   if (globalThis.__DELIVERA_TEST__) globalThis.__adminDesignTest = { state, hydrate, visiblePackages, operationMapData, packageDetail, connectStream, handleRoute };
 
-  (async () => { await load(); if (state.token) { connectStream(); startPolling(); } })();
+  (async () => {
+    await load();
+    if (state.token) {
+      connectStream(); startPolling();
+      import("/push-client.js").then(({ registerPush }) => registerPush("admin", api)).catch(() => {});
+      const query = new URLSearchParams(location.search);
+      const pkg = packages().find((item) => item.id === query.get("package"));
+      if (pkg) packageDetail(pkg);
+      else if (query.has("notifications")) notificationCenter();
+    }
+  })();
 })();

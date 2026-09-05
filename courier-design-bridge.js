@@ -181,18 +181,11 @@
   }
 
   async function initializeCourierPush(options = {}) {
-    if (pushInitialized || !token() || !("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") return false;
-    let permission = Notification.permission;
-    if (options.requestPermission && permission === "default") permission = await requestCourierNotificationPermission();
-    if (permission !== "granted") return false;
+    if (!token()) return false;
     try {
-      const registration = await navigator.serviceWorker.register("/courier-push-sw.js", { scope: "/" });
-      const keyResponse = await api("/api/courier/push/public-key");
-      let subscription = await registration.pushManager.getSubscription();
-      if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushApplicationServerKey(keyResponse.publicKey) });
-      await api("/api/courier/push/subscriptions", { method: "POST", body: JSON.stringify({ subscription: subscription.toJSON() }) });
-      pushInitialized = true;
-      return true;
+      const { registerPush } = await import("/push-client.js");
+      pushInitialized = await registerPush("courier", api, options.requestPermission);
+      return pushInitialized;
     } catch (error) {
       if (options.requestPermission) toast(error.message || "Bildirimler etkinleştirilemedi.", "error");
       return false;
@@ -338,7 +331,7 @@
     modal.className = "delivera-modal";
     modal.innerHTML = `<section class="delivera-sheet"><div class="delivera-sheet-head"><h2>Bildirim Merkezi</h2><button class="delivera-close" type="button">×</button></div>${notificationPermission() !== "granted" ? '<button type="button" class="delivera-push-enable">Telefon Bildirimlerini ve Sesi Aç</button>' : ""}<button type="button" class="delivera-push-enable" data-read-all ${notifications.some((item) => item.unread !== false && !item.readAt) ? "" : "disabled"}>Tümünü Okundu İşaretle</button><div class="delivera-notification-list">${notifications.length ? notifications.map((item) => `<article class="delivera-notification-item"><strong>${esc(item.message)}</strong><time>${new Date(item.createdAt).toLocaleString("tr-TR")}${item.readAt ? ` · Okundu ${new Date(item.readAt).toLocaleString("tr-TR")}` : " · Okunmadı"}</time></article>`).join("") : '<div class="delivera-package"><p>Henüz bildirim yok.</p></div>'}</div></section>`;
     modal.querySelector(".delivera-close").onclick = () => modal.remove();
-    modal.querySelector(".delivera-push-enable")?.addEventListener("click", async () => { unlockAssignmentAudio(); const enabled = await initializeCourierPush({ requestPermission: true }); if (enabled) modal.querySelector(".delivera-push-enable")?.remove(); });
+    modal.querySelector(".delivera-push-enable:not([data-read-all])")?.addEventListener("click", async () => { unlockAssignmentAudio(); const enabled = await initializeCourierPush({ requestPermission: true }); if (enabled) modal.querySelector(".delivera-push-enable:not([data-read-all])")?.remove(); });
     modal.querySelector("[data-read-all]")?.addEventListener("click", async () => {
       try {
         const result = await api("/api/courier/notifications/read", { method: "POST", body: JSON.stringify({}) });
@@ -373,7 +366,11 @@
     revealCourierApp();
   }
 
-  function logout(callApi = true) {
+  async function logout(callApi = true) {
+    if (callApi) {
+      try { const { removePush } = await import("/push-client.js"); await removePush("courier", api); } catch {}
+    }
+    pushInitialized = false;
     const refreshToken = localStorage.getItem(REFRESH_KEY) || "";
     if (callApi && refreshToken) api("/api/courier/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).catch(() => {});
     localStorage.removeItem(TOKEN_KEY);
@@ -1623,8 +1620,14 @@
       processIncomingAssignments(workspace);
       await hydrate();
       connectEventStream();
-      if (notificationPermission() === "granted") initializeCourierPush();
+      initializeCourierPush();
       revealCourierApp();
+      if (!document.body.dataset.pushLinkHandled) {
+        document.body.dataset.pushLinkHandled = "1";
+        const query = new URLSearchParams(location.search);
+        if (query.has("package")) packageSheet();
+        else if (query.has("notifications")) showNotificationCenter();
+      }
     } catch (error) {
       if (token()) toast(error.message, "error");
       revealCourierApp();

@@ -188,9 +188,14 @@
     clearInterval(state.poll);
   }
 
-  function logout() {
+  async function logout() {
     const token = state.token;
     const refreshToken = state.refreshToken;
+    clearAuth();
+    pushInitialized = false;
+    if (navigator.serviceWorker || window.Capacitor?.isNativePlatform?.()) {
+      try { const { removePushWithToken } = await import("/push-client.js"); await removePushWithToken("restaurant", token); } catch {}
+    }
     if (refreshToken) {
       fetch("/api/restaurant/logout", {
         method: "POST",
@@ -347,20 +352,11 @@
   }
 
   async function initializeRestaurantPush(requestPermission = false) {
-    if (pushInitialized) return true;
-    if (!state.token || !("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") return false;
-    let permission = Notification.permission;
-    if (requestPermission && permission === "default") permission = await Notification.requestPermission();
-    if (permission !== "granted") return false;
+    if (!state.token) return false;
     try {
-      const registration = await navigator.serviceWorker.register("/courier-push-sw.js?v=20260814-1", { scope: "/" });
-      await registration.update().catch(() => {});
-      const keyResponse = await api("/api/restaurant/push/public-key");
-      let subscription = await registration.pushManager.getSubscription();
-      if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushApplicationServerKey(keyResponse.publicKey) });
-      await api("/api/restaurant/push/subscriptions", { method: "POST", body: JSON.stringify({ subscription: subscription.toJSON() }) });
-      pushInitialized = true;
-      return true;
+      const { registerPush } = await import("/push-client.js");
+      pushInitialized = await registerPush("restaurant", api, requestPermission);
+      return pushInitialized;
     } catch (error) {
       if (requestPermission) toast(error.message || "Bildirimler etkinleştirilemedi.", "error");
       return false;
@@ -734,6 +730,13 @@
         loadPanelData(),
       ]);
       hydrate(bootstrapData);
+      if (!state.pushLinkHandled) {
+        state.pushLinkHandled = true;
+        const query = new URLSearchParams(location.search);
+        const pkg = currentPackages().find((item) => item.id === query.get("package"));
+        if (pkg) detailModal(pkg);
+        else if (query.has("notifications")) refs.notificationButton?.click();
+      }
     }
     catch (error) { if (!silent) { clearAuth(); showLogin(error.message); } }
   }
@@ -1519,7 +1522,7 @@
         } catch { showLogin(); return; }
       } else { showLogin(); return; }
     } else await load();
-    if (notificationPermission() === "granted") initializeRestaurantPush(false);
+    initializeRestaurantPush(false);
     connectStream(); startPolling();
   }
 
