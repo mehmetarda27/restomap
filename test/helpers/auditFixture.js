@@ -7,7 +7,7 @@ const { spawn } = require('node:child_process');
 const { DatabaseSync } = require('node:sqlite');
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function auditFixture(t) {
+async function auditFixture(t, options = {}) {
   const root = path.resolve(__dirname, '../..');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'restomap-audit-'));
   const file = path.join(dir, 'audit.sqlite');
@@ -18,6 +18,7 @@ async function auditFixture(t) {
   const env = { ...process.env, NODE_ENV: 'test', PORT: String(port), DATABASE_PATH: file, DB_PATH: file, DELIVERA_DB_FILE: file, DELIVERA_ADMIN_USERNAME: 'audit_admin', DELIVERA_ADMIN_PASSWORD: 'AuditPass123!', DELIVERA_ASSIGNMENT_RETRY_MS: '60000', LOG_LEVEL: 'error' };
   for (const name of ['DATABASE_URL', 'POSTGRES_URL', 'DATABASE_PRIVATE_URL', 'POSTGRES_PRIVATE_URL', 'INTERNAL_DATABASE_URL', 'DATABASE_INTERNAL_URL', 'RENDER_DATABASE_URL', 'RENDER_POSTGRES_URL', 'POSTGRES_DATABASE_URL', 'PGDATABASE_URL', 'DATABASE_CONNECTION_STRING', 'POSTGRES_CONNECTION_STRING', 'REDIS_URL', 'RESTOMAP_FIREBASE_SERVICE_ACCOUNT', 'GOOGLE_APPLICATION_CREDENTIALS', 'POSENTEGRA_API_KEY', 'TELEGRAM_BOT_TOKEN']) env[name] = '';
   env.RESTOMAP_REQUIRE_REDIS = '0';
+  Object.assign(env, options.env || {});
   const server = spawn(process.execPath, ['server.js'], { cwd: root, env, stdio: ['ignore', 'ignore', 'pipe'] });
   let errors = '';
   server.stderr.on('data', (chunk) => { errors += chunk; });

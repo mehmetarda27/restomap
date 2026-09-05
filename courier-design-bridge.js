@@ -396,7 +396,7 @@
       if (payload.type !== "courier-location" && payload.type !== "ping") loadWorkspace();
     };
     eventStream.onmessage = handleEvent;
-    ["package-created", "package-assigned", "package-reassign", "package-override", "package-unassign", "assignment-waiting", "package-status", "package-location-resolved", "restaurant-confirmed", "courier-availability", "shift-plan-offer", "shift-plan-accepted", "workspace-update", "courier-day-close"].forEach((type) => eventStream.addEventListener(type, handleEvent));
+    ["package-created", "package-assigned", "package-reassign", "package-override", "package-unassign", "assignment-waiting", "package-status", "package-location-resolved", "package-location-warning", "restaurant-confirmed", "courier-availability", "shift-plan-offer", "shift-plan-accepted", "workspace-update", "courier-day-close"].forEach((type) => eventStream.addEventListener(type, handleEvent));
     eventStream.onerror = () => {
       eventStream?.close();
       eventStream = null;
@@ -588,7 +588,8 @@
             if (action === "fail" && !payload.failureReason) return toast("Önce sorun nedenini seç.", "error");
             workspace = await api(`/api/courier/packages/${encodeURIComponent(pkg.id)}/status`, { method: "PATCH", body: JSON.stringify(payload) });
           }
-          toast(action === "claim" ? "Paket havuzdan alındı." : action === "accept" ? "Paket kabul edildi." : action === "reject" ? "Paket yeniden atama havuzuna gönderildi." : action === "route" ? "Paket yola çıktı." : action === "deliver" ? "Paket teslim edildi." : "Sorun bildirimi kaydedildi.");
+          const routedPackage = action === "route" ? (workspace?.packages || []).find((item) => item.id === pkg.id) : null;
+          toast(action === "claim" ? "Paket havuzdan alındı." : action === "accept" ? "Paket kabul edildi." : action === "reject" ? "Paket yeniden atama havuzuna gönderildi." : action === "route" && routedPackage?.customerLocationQuality !== "confirmed" ? "Yaklaşık müşteri konumu gösteriliyor; konum doğru olmayabilir, müşteriyi arayarak doğrulayın." : action === "route" ? "Paket yola çıktı." : action === "deliver" ? "Paket teslim edildi." : "Sorun bildirimi kaydedildi.", action === "route" && routedPackage?.customerLocationQuality !== "confirmed" ? "error" : "success");
           modal.remove();
           hydrate();
         } catch (error) { toast(error.message, "error"); }

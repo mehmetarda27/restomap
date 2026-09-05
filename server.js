@@ -3516,7 +3516,11 @@ function assertPersistedRecord(tableName, insertedId, eventName, requestId = nul
 }
 
 function shouldPersistNotification(event) {
-  return Boolean(event?.message) && !["courier-location"].includes(event.type || "");
+  return event?.notification !== false && Boolean(event?.message) && !["courier-location"].includes(event.type || "");
+}
+
+function eventNotifiesRole(event, role) {
+  return !Array.isArray(event?.notificationRoles) || event.notificationRoles.includes(role);
 }
 
 function persistNotification(targetRole, targetId, event) {
@@ -3537,9 +3541,10 @@ function persistNotificationsForEvent(event) {
   if (!shouldPersistNotification(event)) {
     return;
   }
-  persistNotification("admin", null, event);
+  if (eventNotifiesRole(event, "admin")) persistNotification("admin", null, event);
   const { recipients } = require("./services/pushDelivery");
   for (const role of ["restaurant", "courier"]) {
+    if (!eventNotifiesRole(event, role)) continue;
     if (role === "restaurant" && shouldSuppressRestaurantAlert(event)) continue;
     const targets = recipients(role, event);
     const ids = targets === null ? db.prepare(`SELECT id FROM ${role === "restaurant" ? "restaurants" : "couriers"}`).all().map((row) => row.id) : targets;
@@ -4168,12 +4173,13 @@ function claimWebPush(key) {
 }
 
 function dispatchPushEvent(event) {
-  if (!event?.message && !event?.type?.includes("push-test")) return;
+  if (event?.notification === false || (!event?.message && !event?.type?.includes("push-test"))) return;
   if (["courier-location", "ping"].includes(event.type)) return;
   const { createPushDelivery, pushPayload, recipients } = require("./services/pushDelivery");
   try {
     ensureCourierPushConfigured();
     for (const role of ["admin", "restaurant", "courier"]) {
+      if (!eventNotifiesRole(event, role)) continue;
       if (event.type?.includes("push-test") && !event.type.startsWith(role)) continue;
       if (role === "restaurant" && shouldSuppressRestaurantAlert(event)) continue;
       const table = `${role}_push_subscriptions`;
@@ -15753,6 +15759,7 @@ async function handleApi(req, res, pathname) {
     broadcastLiveEvent({
       type: "courier-online",
       courierId: courier.id,
+      notificationRoles: ["admin"],
       message: `${courier.name} online oldu.`,
     });
     return;
@@ -16037,6 +16044,7 @@ async function handleApi(req, res, pathname) {
       longitude: hasCoordinates ? longitude : existing.y,
       available: courier?.available ?? Boolean(body.available),
       at: locationStamp,
+      notificationRoles: availabilityChanged ? ["admin"] : [],
       message: availabilityChanged
         ? (body.available ? "Kurye tekrar atamaya acildi." : "Kurye pasife alindi.")
         : "",
@@ -16102,7 +16110,12 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const workspace = buildCourierWorkspace(session.courier_id);
-    broadcastLiveEvent({ type: "courier-break", courierId: session.courier_id, message: action === "start" ? "Kurye molaya cikti." : "Kurye moladan dondu." });
+    broadcastLiveEvent({
+      type: "courier-break",
+      courierId: session.courier_id,
+      notificationRoles: ["admin"],
+      message: action === "start" ? "Kurye molaya cikti." : "Kurye moladan dondu.",
+    });
     sendJson(res, 200, workspace || { courier: null, packages: [] });
     return;
   }
@@ -16375,6 +16388,7 @@ async function handleApi(req, res, pathname) {
         courierId: session.courier_id,
         restaurantId: target.restaurant_id,
         packageId,
+        notificationRoles: ["admin", "restaurant"],
         message: `${target.tracking_no || target.id} paketi ters yon nedeniyle havuza dondu; yeniden kurye araniyor.`,
       });
       sendJson(res, 200, directionWorkspace || { courier: null, packages: [] });
@@ -16397,19 +16411,33 @@ async function handleApi(req, res, pathname) {
     }
 
     if (nextStatus === ON_ROUTE_STATUS) {
-      const coordinates = await resolvePackageCustomerCoordinates(target);
+      let coordinates = await resolvePackageCustomerCoordinates(target);
       if (!coordinates) {
-        sendJson(res, 422, {
-          error: "Yola cikis baslatilamadi: musteri adresi haritada bulunamadi. Sokak ve bina numarasi bilgisini kontrol edin.",
+        const fallbackLatitude = Number(target.x);
+        const fallbackLongitude = Number(target.y);
+        if (!coordinatesAreValid(fallbackLatitude, fallbackLongitude)) {
+          sendJson(res, 422, { error: "Yola cikis baslatilamadi: musteri ve restoran konumu haritada bulunamadi." });
+          return;
+        }
+        db.prepare("UPDATE packages SET customer_lat = ?, customer_lng = ?, customer_location_quality = 'approximate', updated_at = ? WHERE id = ? AND COALESCE(customer_location_quality, '') != 'confirmed'")
+          .run(fallbackLatitude, fallbackLongitude, nowIso(), packageId);
+        coordinates = { latitude: fallbackLatitude, longitude: fallbackLongitude, cached: false, fallback: true };
+        broadcastLiveEvent({
+          type: "package-location-warning",
+          courierId: session.courier_id,
+          restaurantId: target.restaurant_id,
+          packageId,
+          notificationRoles: ["courier"],
+          message: "Müşteri konumu tam bulunamadı. Haritada restoranın yakınındaki yaklaşık nokta gösteriliyor; konum doğru olmayabilir, müşteriyi arayarak doğrulayın.",
         });
-        return;
       }
-      if (!coordinates.cached) {
+      if (!coordinates.cached && !coordinates.fallback) {
         broadcastLiveEvent({
           type: "package-location-resolved",
           restaurantId: target.restaurant_id,
           courierId: session.courier_id,
           packageId,
+          notification: false,
           message: "Musteri konumu otomatik olarak haritada bulundu.",
         });
       }
@@ -16525,6 +16553,7 @@ async function handleApi(req, res, pathname) {
       message: `Paket durumu ${nextStatus} oldu.`,
       packageId: target.id,
       status: nextStatus,
+      notificationRoles: ["admin", "restaurant"],
     });
     sendJson(res, 200, workspace || { courier: null, packages: [] });
     return;
@@ -16596,6 +16625,7 @@ async function handleApi(req, res, pathname) {
       type: "assignment-waiting",
       courierId: session.courier_id,
       restaurantId: target.restaurant_id,
+      notificationRoles: ["admin", "restaurant"],
       message: `${target.tracking_no || target.id} paketi kurye tarafindan reddedildi, yeniden atama araniyor.`,
     });
     sendJson(res, 200, workspace || { courier: null, packages: [] });
@@ -16650,6 +16680,7 @@ async function handleApi(req, res, pathname) {
     broadcastLiveEvent({
       type: "courier-day-close",
       courierId: session.courier_id,
+      notificationRoles: ["admin"],
       message: "Kurye gun sonu raporu olustu.",
     });
     sendJson(res, 200, {
@@ -17482,6 +17513,7 @@ async function handleApi(req, res, pathname) {
     broadcastLiveEvent({
       type: "courier-availability",
       courierId: availabilityMatch[1],
+      notificationRoles: ["courier"],
       message: body.available ? "Kurye admin tarafindan aktif edildi." : "Kurye admin tarafindan pasife alindi.",
     });
     sendJson(res, 200, {
