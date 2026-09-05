@@ -437,7 +437,16 @@
 
   function showNotificationCenter() {
     const notifications = state.data?.notifications || [];
-    modal("Bildirim Merkezi", notifications.length ? notifications.map((item) => `<div class="zg-list-row"><div><b>${safe(item.message || item.title || "Bildirim")}</b><div class="text-xs text-slate-500">${dateTime(item.createdAt)}</div></div></div>`).join("") : '<div class="zg-empty">Henüz bildirim yok.</div>');
+    modal("Bildirim Merkezi", `<div class="zg-modal-actions mb-3"><button type="button" class="zg-action" data-read-all ${notifications.some((item) => item.unread !== false && !item.readAt) ? "" : "disabled"}>Tümünü Okundu İşaretle</button></div>${notifications.length ? notifications.map((item) => `<div class="zg-list-row"><div><b>${safe(item.message || item.title || "Bildirim")}</b><div class="text-xs text-slate-500">${dateTime(item.createdAt)}${item.readAt ? ` · Okundu ${dateTime(item.readAt)}` : " · Okunmadı"}</div></div></div>`).join("") : '<div class="zg-empty">Henüz bildirim yok.</div>'}`, (root) => {
+      root.querySelector("[data-read-all]")?.addEventListener("click", async () => {
+        try {
+          const result = await api("/api/restaurant/notifications/read", { method: "POST", body: JSON.stringify({}) });
+          state.data.notifications = result.notifications || [];
+          updateCounters();
+          showNotificationCenter();
+        } catch (error) { toast(error.message, "error"); }
+      });
+    });
   }
 
   function modal(title, html, onMount) {
@@ -710,7 +719,11 @@
     syncPlatformAttention(data.packages || []);
     updateBusiness(); updateCounters(); renderOrders();
     const badge = refs.notificationButton?.querySelector(".zg-notification-badge");
-    if (badge) { badge.textContent = String((data.notifications || []).length); badge.hidden = !(data.notifications || []).length; }
+    if (badge) {
+      const unread = (data.notifications || []).filter((item) => item.unread !== false && !item.readAt).length;
+      badge.textContent = String(unread);
+      badge.hidden = !unread;
+    }
     updateRestaurantCourierMap(false);
   }
 

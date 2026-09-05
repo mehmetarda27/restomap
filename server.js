@@ -810,6 +810,7 @@ db.exec(`
     target_id TEXT,
     event_type TEXT NOT NULL,
     message TEXT NOT NULL,
+    read_at TEXT,
     created_at TEXT NOT NULL
   );
 
@@ -1367,6 +1368,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_notification_logs_target_created
   ON notification_logs (target_role, target_id, created_at DESC);
 `);
+
+if (!db.prepare("PRAGMA table_info(notification_logs)").all().some((row) => row.name === "read_at")) {
+  db.exec("ALTER TABLE notification_logs ADD COLUMN read_at TEXT");
+}
 
 const zoneInsert = db.prepare("INSERT OR IGNORE INTO zones (name) VALUES (?)");
 DEFAULT_ZONES.forEach((zone) => zoneInsert.run(zone));
@@ -3493,8 +3498,28 @@ function getNotifications(targetRole, targetId = null, limit = 20) {
     id: row.id,
     eventType: row.event_type,
     message: row.message,
+    readAt: row.read_at || null,
+    unread: !row.read_at,
     createdAt: row.created_at,
   }));
+}
+
+function markNotificationsRead(targetRole, targetId = null, notificationIds = []) {
+  const stamp = nowIso();
+  const ids = Array.isArray(notificationIds) ? notificationIds.map((id) => trimmed(id)).filter(Boolean) : [];
+  const params = [stamp, targetRole];
+  let where = "target_role = ? AND read_at IS NULL";
+  if (targetId) {
+    where += " AND target_id = ?";
+    params.push(targetId);
+  } else {
+    where += " AND target_id IS NULL";
+  }
+  if (ids.length) {
+    where += ` AND id IN (${ids.map(() => "?").join(",")})`;
+    params.push(...ids);
+  }
+  return db.prepare(`UPDATE notification_logs SET read_at = ? WHERE ${where}`).run(...params).changes;
 }
 
 function getAnnouncements(targetRole = null) {
@@ -13029,6 +13054,18 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (req.method === "POST" && pathname === "/api/admin/notifications/read") {
+    const adminSession = getAdminSession(req);
+    if (!adminSession) {
+      sendJson(res, 401, { error: "Admin oturumu bulunamadi." });
+      return;
+    }
+    const { json: body } = await readRequestBody(req);
+    const changed = markNotificationsRead("admin", null, body.ids);
+    sendJson(res, 200, { ok: true, changed, notifications: getNotifications("admin", null, 50) });
+    return;
+  }
+
   const adminCourierEarningMatch = pathname.match(/^\/api\/admin\/courier-earnings\/([^/]+)$/);
   const adminCourierEarningPaidMatch = pathname.match(/^\/api\/admin\/courier-earnings\/([^/]+)\/mark-paid$/);
 
@@ -13689,6 +13726,18 @@ async function handleApi(req, res, pathname) {
       return;
     }
     openLiveStream(req, res, { role: "restaurant", restaurantId: session.restaurant_id });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/restaurant/notifications/read") {
+    const session = getRestaurantSession(req);
+    if (!session) {
+      sendJson(res, 401, { error: "Restoran oturumu bulunamadi." });
+      return;
+    }
+    const { json: body } = await readRequestBody(req);
+    const changed = markNotificationsRead("restaurant", session.restaurant_id, body.ids);
+    sendJson(res, 200, { ok: true, changed, notifications: getNotifications("restaurant", session.restaurant_id, 50) });
     return;
   }
 
@@ -15850,6 +15899,18 @@ async function handleApi(req, res, pathname) {
       return;
     }
     openLiveStream(req, res, { role: "courier", courierId: session.courier_id });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/courier/notifications/read") {
+    const session = getCourierSession(req);
+    if (!session) {
+      sendJson(res, 401, { error: "Kurye oturumu bulunamadi." });
+      return;
+    }
+    const { json: body } = await readRequestBody(req);
+    const changed = markNotificationsRead("courier", session.courier_id, body.ids);
+    sendJson(res, 200, { ok: true, changed, notifications: getNotifications("courier", session.courier_id, 50) });
     return;
   }
 

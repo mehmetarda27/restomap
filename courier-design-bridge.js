@@ -305,7 +305,7 @@
     modal.className = "delivera-modal delivera-offer-modal";
     modal.dataset.packageId = pkg.id;
     modal.innerHTML = `<section class="delivera-offer-sheet" role="alertdialog" aria-modal="true"><div class="delivera-offer-alert"><span class="material-symbols-outlined notranslate" translate="no">notifications_active</span><div><h2>Yeni Paket Düştü</h2><p>Kabul veya red işlemi yapmadan bu bildirim kapanmaz.</p></div></div><div class="delivera-offer-grid"><div class="delivera-offer-item"><span>Paket</span><strong>${esc(pkg.trackingNo || pkg.id)}</strong></div><div class="delivera-offer-item"><span>Mesafe</span><strong>${Number.isFinite(Number(pkg.distanceKm)) ? `${Number(pkg.distanceKm).toFixed(1)} km` : esc(pkg.eta || "Hesaplanıyor")}</strong></div><div class="delivera-offer-item wide"><span>Restoran</span><strong>${esc(pkg.restaurantName || "Restoran")}</strong></div><div class="delivera-offer-item wide"><span>Teslimat adresi</span><strong>${esc(pkg.customerAddress || pkg.deliveryAddress || pkg.address || "Adres bekleniyor")}</strong></div><div class="delivera-offer-item"><span>Müşteri</span><strong>${esc(pkg.recipient || "Müşteri")}</strong></div><div class="delivera-offer-item"><span>Ödeme</span><strong>${esc(pkg.paymentMethod || "Belirtilmedi")}</strong></div></div>${notificationPermission() !== "granted" ? '<button type="button" class="delivera-push-enable">Telefon Bildirimlerini ve Sesi Aç</button>' : ""}<div class="delivera-offer-actions"><button type="button" class="reject">Paketi Reddet</button><button type="button" class="accept">Paketi Kabul Et</button></div></section>`;
-    modal.querySelector(".delivera-push-enable")?.addEventListener("click", async () => { unlockAssignmentAudio(); const enabled = await initializeCourierPush({ requestPermission: true }); if (enabled) modal.querySelector(".delivera-push-enable")?.remove(); });
+    modal.querySelector(".delivera-push-enable:not([data-read-all])")?.addEventListener("click", async () => { unlockAssignmentAudio(); const enabled = await initializeCourierPush({ requestPermission: true }); if (enabled) modal.querySelector(".delivera-push-enable:not([data-read-all])")?.remove(); });
     modal.querySelector(".accept").addEventListener("click", () => performOfferAction(pkg, "accept", modal));
     modal.querySelector(".reject").addEventListener("click", () => performOfferAction(pkg, "reject", modal));
     document.body.append(modal);
@@ -336,9 +336,17 @@
     const notifications = workspace?.notifications || [];
     const modal = document.createElement("div");
     modal.className = "delivera-modal";
-    modal.innerHTML = `<section class="delivera-sheet"><div class="delivera-sheet-head"><h2>Bildirim Merkezi</h2><button class="delivera-close" type="button">×</button></div>${notificationPermission() !== "granted" ? '<button type="button" class="delivera-push-enable">Telefon Bildirimlerini ve Sesi Aç</button>' : ""}<div class="delivera-notification-list">${notifications.length ? notifications.map((item) => `<article class="delivera-notification-item"><strong>${esc(item.message)}</strong><time>${new Date(item.createdAt).toLocaleString("tr-TR")}</time></article>`).join("") : '<div class="delivera-package"><p>Henüz bildirim yok.</p></div>'}</div></section>`;
+    modal.innerHTML = `<section class="delivera-sheet"><div class="delivera-sheet-head"><h2>Bildirim Merkezi</h2><button class="delivera-close" type="button">×</button></div>${notificationPermission() !== "granted" ? '<button type="button" class="delivera-push-enable">Telefon Bildirimlerini ve Sesi Aç</button>' : ""}<button type="button" class="delivera-push-enable" data-read-all ${notifications.some((item) => item.unread !== false && !item.readAt) ? "" : "disabled"}>Tümünü Okundu İşaretle</button><div class="delivera-notification-list">${notifications.length ? notifications.map((item) => `<article class="delivera-notification-item"><strong>${esc(item.message)}</strong><time>${new Date(item.createdAt).toLocaleString("tr-TR")}${item.readAt ? ` · Okundu ${new Date(item.readAt).toLocaleString("tr-TR")}` : " · Okunmadı"}</time></article>`).join("") : '<div class="delivera-package"><p>Henüz bildirim yok.</p></div>'}</div></section>`;
     modal.querySelector(".delivera-close").onclick = () => modal.remove();
     modal.querySelector(".delivera-push-enable")?.addEventListener("click", async () => { unlockAssignmentAudio(); const enabled = await initializeCourierPush({ requestPermission: true }); if (enabled) modal.querySelector(".delivera-push-enable")?.remove(); });
+    modal.querySelector("[data-read-all]")?.addEventListener("click", async () => {
+      try {
+        const result = await api("/api/courier/notifications/read", { method: "POST", body: JSON.stringify({}) });
+        workspace.notifications = result.notifications || [];
+        hydrate();
+        showNotificationCenter();
+      } catch (error) { toast(error.message || "Bildirimler okundu işaretlenemedi.", "error"); }
+    });
     modal.addEventListener("click", (event) => { if (event.target === modal) modal.remove(); });
     document.body.append(modal);
   }
@@ -1157,7 +1165,10 @@
       profileButton.insertAdjacentElement("beforebegin", notificationButton);
     }
     const notificationBadge = document.querySelector(".delivera-notification-badge");
-    if (notificationBadge) notificationBadge.textContent = (workspace.notifications || []).length ? String(Math.min(99, workspace.notifications.length)) : "";
+    if (notificationBadge) {
+      const unread = (workspace.notifications || []).filter((item) => item.unread !== false && !item.readAt).length;
+      notificationBadge.textContent = unread ? String(Math.min(99, unread)) : "";
+    }
     textNodes("Aktif Paket").forEach((label) => { const count = label.parentElement?.querySelector("div"); if (count) count.textContent = packages.length; const button = label.closest("button"); if (button) button.onclick = () => packageSheet("active"); });
     textNodes("Yoldaki Paket").forEach((label) => { const count = label.parentElement?.querySelector("div"); if (count) count.textContent = onRoad.length; const button = label.closest("button"); if (button) button.onclick = () => packageSheet("road"); });
     document.querySelectorAll("[data-delivera-history-pill]").forEach((button) => button.remove());

@@ -301,7 +301,7 @@
       button.classList.toggle("text-on-primary-container", state.filter === key);
     });
     const badge = refs.notificationButton.querySelector(".da-notification-badge");
-    const count = (state.data.notifications || []).length; badge.textContent = count; badge.hidden = count === 0;
+    const count = (state.data.notifications || []).filter((item) => item.unread !== false && !item.readAt).length; badge.textContent = count; badge.hidden = count === 0;
     const unmatchedCount = unmatchedOrders().filter((order) => !order.isResolved).length;
     if (refs.unmatchedMenuBadge) refs.unmatchedMenuBadge.textContent = String(unmatchedCount);
     const creditBalance = (state.data?.creditAccounts || []).reduce((sum, item) => sum + Number(item.balance || 0), 0);
@@ -357,7 +357,16 @@
 
   function notificationCenter() {
     const items = state.data?.notifications || [];
-    modal("Bildirim Merkezi", items.length ? `<div class="da-list">${items.map((item) => `<div class="da-list-row"><div><b>${esc(item.message || "Bildirim")}</b><small>${dateTime(item.createdAt)}</small></div><span class="da-badge">${esc(item.eventType || "sistem")}</span></div>`).join("")}</div>` : '<div class="da-empty">Henüz bildirim yok.</div>');
+    modal("Bildirim Merkezi", `<div class="da-actions" style="margin-bottom:12px"><button class="da-secondary" type="button" data-read-all ${items.some((item) => item.unread !== false && !item.readAt) ? "" : "disabled"}>Tümünü Okundu İşaretle</button></div>${items.length ? `<div class="da-list">${items.map((item) => `<div class="da-list-row"><div><b>${esc(item.message || "Bildirim")}</b><small>${dateTime(item.createdAt)}${item.readAt ? ` · Okundu ${dateTime(item.readAt)}` : " · Okunmadı"}</small></div><span class="da-badge">${esc(item.eventType || "sistem")}</span></div>`).join("")}</div>` : '<div class="da-empty">Henüz bildirim yok.</div>'}`, (root) => {
+      root.querySelector("[data-read-all]")?.addEventListener("click", async () => {
+        try {
+          const result = await api("/api/admin/notifications/read", { method: "POST", body: JSON.stringify({}) });
+          state.data.notifications = result.notifications || [];
+          updateCounters();
+          notificationCenter();
+        } catch (error) { toast(error.message, "error"); }
+      });
+    });
   }
 
   function packageDetailLegacy(pkg) {
