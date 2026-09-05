@@ -999,6 +999,11 @@
     renderUnmatchedWorkspace();
   }
 
+  function unsupportedFeature(route) {
+    const title = route.replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
+    modal(title || "Modül", `<div class="da-empty">Bu menü henüz gerçek bir işlem motoruna bağlı değil. Sahte kayıt oluşturulmadı; modül bağlandığında veritabanı ve panel akışıyla birlikte açılacak.</div>`);
+  }
+
   function genericRoute(route) {
     const exactHandlers = {
       "kurye raporu": courierStatusReport,
@@ -1058,7 +1063,7 @@
     if (route.includes("işletme tarih aralığı")) return accountReportModal(true);
     if (route.includes("günlük sipariş raporu")) return accountReportModal();
     if (route.includes("rapor") || route.includes("geçmiş")) return reportModal(route.replace(/(^|\s)\S/g, (letter) => letter.toUpperCase()));
-    return recordManagement({ type: `menu_${route.replace(/[^a-z0-9çğıöşü]+/g, "_")}`, title: route.replace(/(^|\s)\S/g, (letter) => letter.toUpperCase()), placeholder: "İşlem açıklaması", amount: true, dates: true });
+    return unsupportedFeature(route);
   }
 
   function integrationManagement() {

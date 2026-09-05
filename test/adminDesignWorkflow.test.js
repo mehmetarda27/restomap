@@ -154,5 +154,9 @@ test("new admin design renders backend packages and listens to named live operat
     assert.match(window.document.querySelector(".da-modal-head")?.textContent || "", new RegExp(title), route);
     window.document.querySelector(".da-modal-root")?.remove();
   }
+  await window.__adminDesignTest.handleRoute("henüz bağlı olmayan örnek modül");
+  await delay(5);
+  assert.match(window.document.querySelector(".da-modal-body")?.textContent || "", /gerçek bir işlem motoruna bağlı değil/);
+  assert.equal(window.document.querySelector("[data-record-form]"), null);
   dom.window.close();
 });
