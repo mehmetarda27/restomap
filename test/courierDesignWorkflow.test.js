@@ -92,6 +92,23 @@ test("courier design flow accepts, routes, delivers and records a break", { time
     assert.equal(routedPackage.status, "on_route");
     assert.equal(routedPackage.customerLat, 36.8129837);
     assert.equal(routedPackage.customerLng, 34.6235738);
+    assert.equal(routedPackage.customerLocationQuality, 'approximate');
+    const correctionSession = await request(baseUrl, '/api/restaurant/session', '', { method: 'POST', body: JSON.stringify({ restaurantId: 'rst_flow', apiKey: 'flow-api' }) });
+    const unauthorizedPoint = await fetch(`${baseUrl}/api/restaurant/packages/pkg_flow/delivery-point`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ latitude: 36.81, longitude: 34.62 }) });
+    assert.equal(unauthorizedPoint.status, 401);
+    const invalidPoint = await fetch(`${baseUrl}/api/restaurant/packages/pkg_flow/delivery-point`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${correctionSession.token}` }, body: JSON.stringify({ latitude: null, longitude: null }) });
+    assert.equal(invalidPoint.status, 400);
+    await request(baseUrl, '/api/restaurant/packages/pkg_flow/delivery-point', correctionSession.token, { method: 'PATCH', body: JSON.stringify({ latitude: 36.815, longitude: 34.625 }) });
+    const correctedMap = await request(baseUrl, '/api/courier/live-map', 'token-flow');
+    const correctedPackage = correctedMap.packages.find(pkg => pkg.id === 'pkg_flow');
+    assert.equal(correctedPackage.customerLat, 36.815);
+    assert.equal(correctedPackage.customerLocationQuality, 'confirmed');
+    assert.equal(correctedPackage.status, 'on_route');
+    const observedAt = Date.now() - 45000;
+    let location = await request(baseUrl, '/api/courier/location', 'token-flow', { method: 'PATCH', body: JSON.stringify({ latitude: 36.79, longitude: 34.6, locationOnly: true, observedAt }) });
+    assert.equal(new Date(location.courier.gpsObservedAt).getTime(), observedAt);
+    location = await request(baseUrl, '/api/courier/location', 'token-flow', { method: 'PATCH', body: JSON.stringify({ latitude: 36.79, longitude: 34.6, locationOnly: true }) });
+    assert.equal(new Date(location.courier.gpsObservedAt).getTime(), observedAt, 'heartbeat must not make old GPS fresh');
     assert.match(geocodeQueries[0], /86064\. Sokak/i);
     assert.match(geocodeQueries[0], /no: 1/i);
     assert.match(geocodeQueries[0], /Akdeniz/i);
@@ -105,6 +122,8 @@ test("courier design flow accepts, routes, delivers and records a break", { time
     workspace = await request(baseUrl, "/api/courier/packages/pkg_flow/status", "token-flow", { method: "PATCH", body: JSON.stringify({ status: "delivered", paymentStatus: "cash_collected", courierCollectionNote: "250 TL alındı" }) });
     const delivered = workspace.historyPackages.find((pkg) => pkg.id === "pkg_flow");
     assert.equal(delivered.status, "delivered");
+    const closedPoint = await fetch(`${baseUrl}/api/restaurant/packages/pkg_flow/delivery-point`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${correctionSession.token}` }, body: JSON.stringify({ latitude: 36.81, longitude: 34.62 }) });
+    assert.equal(closedPoint.status, 409);
     assert.equal(delivered.paymentStatus, "cash_collected");
     assert.equal(delivered.paymentMethod, "Nakit tahsil edildi");
     const restaurantLogin = await request(baseUrl, "/api/restaurant/session", "", {

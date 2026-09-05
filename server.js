@@ -945,6 +945,8 @@ if (!packageColumns.includes("customer_lat")) {
 if (!packageColumns.includes("customer_lng")) {
   db.exec("ALTER TABLE packages ADD COLUMN customer_lng REAL");
 }
+if (!packageColumns.includes("customer_location_quality")) db.exec("ALTER TABLE packages ADD COLUMN customer_location_quality TEXT");
+if (!courierColumns.includes("gps_observed_at")) db.exec("ALTER TABLE couriers ADD COLUMN gps_observed_at TEXT");
 if (!packageColumns.includes("customer_address")) {
   db.exec("ALTER TABLE packages ADD COLUMN customer_address TEXT");
 }
@@ -4735,6 +4737,7 @@ function getCouriers(filter = {}) {
     available: Boolean(row.available),
     status: normalizeCourierStatus(row.status, Boolean(row.available)),
     lastLocationAt: row.last_location_at,
+    gpsObservedAt: row.gps_observed_at,
     perPackageFee: row.per_package_fee === null || row.per_package_fee === undefined ? null : Number(row.per_package_fee || 0),
     username: row.username,
     passwordHash: row.password_hash,
@@ -4758,6 +4761,7 @@ function getCourierById(courierId) {
     available: Boolean(row.available),
     status: normalizeCourierStatus(row.status, Boolean(row.available)),
     lastLocationAt: row.last_location_at,
+    gpsObservedAt: row.gps_observed_at,
     perPackageFee: row.per_package_fee === null || row.per_package_fee === undefined ? null : Number(row.per_package_fee || 0),
     username: row.username,
     passwordHash: row.password_hash,
@@ -4867,6 +4871,7 @@ function getPackages(filter = {}) {
     isScheduled: Boolean(row.is_scheduled),
     scheduledDate: row.scheduled_date || null,
     customerLat: row.customer_lat,
+    customerLocationQuality: row.customer_location_quality || 'unverified',
     customerLng: row.customer_lng,
     customerAddress: row.customer_address || row.delivery_address || row.address,
     restaurantLat: row.x,
@@ -4996,6 +5001,7 @@ function mapPackageRow(row, restaurantMap = new Map(), platformOrder) {
     note: row.note,
     customerNote: row.customer_note || "",
     customerLat: row.customer_lat,
+    customerLocationQuality: row.customer_location_quality || 'unverified',
     customerLng: row.customer_lng,
     customerAddress: row.customer_address || row.delivery_address || row.address,
     restaurantLat: row.x,
@@ -8593,8 +8599,10 @@ async function resolvePackageCustomerCoordinates(pkg) {
   for (const candidate of packageDeliveryAddressCandidates(pkg)) {
     const coordinates = await geocodeDeliveryAddress(candidate, proximity);
     if (!coordinates) continue;
-    db.prepare("UPDATE packages SET customer_lat = ?, customer_lng = ?, updated_at = ? WHERE id = ?")
+    db.prepare("UPDATE packages SET customer_lat = ?, customer_lng = ?, updated_at = ?, customer_location_quality = 'approximate' WHERE id = ? AND COALESCE(customer_location_quality, '') != 'confirmed'")
       .run(coordinates.latitude, coordinates.longitude, nowIso(), pkg.id);
+    const confirmed = db.prepare('SELECT customer_lat, customer_lng, customer_location_quality FROM packages WHERE id = ?').get(pkg.id);
+    if (confirmed?.customer_location_quality === 'confirmed') return { latitude: confirmed.customer_lat, longitude: confirmed.customer_lng, cached: true };
     return { ...coordinates, cached: false, query: candidate };
   }
   return null;
@@ -15811,9 +15819,14 @@ async function handleApi(req, res, pathname) {
       session.courier_id
     );
 
+    const observedMs = Number(body.observedAt);
+    if (hasCoordinates && Number.isFinite(observedMs) && observedMs > 0 && observedMs <= Date.now() + 60000) {
+      const previousGps = new Date(existing.gps_observed_at || '').getTime();
+      if (!Number.isFinite(previousGps) || observedMs > previousGps) db.prepare('UPDATE couriers SET gps_observed_at = ? WHERE id = ?').run(new Date(Math.min(Date.now(), observedMs)).toISOString(), session.courier_id);
+    }
     const lightweightLocationOnly = body.locationOnly === true && !availabilityChanged;
     const workspace = lightweightLocationOnly ? null : buildCourierWorkspace(session.courier_id);
-    const courier = workspace?.courier || sanitizeCourier(db.prepare("SELECT * FROM couriers WHERE id = ?").get(session.courier_id));
+    const courier = workspace?.courier || sanitizeCourier(getCourierById(session.courier_id));
     if (!lightweightLocationOnly || availabilityChanged) {
       writeAuditLog({
         actorRole: "courier",
@@ -15920,6 +15933,24 @@ async function handleApi(req, res, pathname) {
       packages: getCourierPackages(session.courier_id, { limit: 100, offset: 0 }),
       generatedAt: nowIso(),
     });
+    return;
+  }
+
+  const deliveryPointMatch = pathname.match(/^\/api\/restaurant\/packages\/([^/]+)\/delivery-point$/);
+  if (req.method === 'PATCH' && deliveryPointMatch) {
+    const session = getRestaurantSession(req);
+    if (!session) { sendJson(res, 401, { error: 'Oturum bulunamadı.' }); return; }
+    const pkg = db.prepare('SELECT * FROM packages WHERE id = ? AND restaurant_id = ?').get(decodeURIComponent(deliveryPointMatch[1]), session.restaurant_id);
+    if (!pkg) { sendJson(res, 404, { error: 'Paket bulunamadı.' }); return; }
+    if (['delivered', 'cancelled', 'failed'].includes(pkg.status)) { sendJson(res, 409, { error: 'Tamamlanan paketin teslimat noktası değiştirilemez.' }); return; }
+    const { json: body } = await readRequestBody(req);
+    if (body.latitude == null || body.longitude == null || body.latitude === '' || body.longitude === '' || !coordinatesAreValid(Number(body.latitude), Number(body.longitude))) { sendJson(res, 400, { error: 'Geçerli bir teslimat noktası seçin.' }); return; }
+    const changedPoint = db.prepare("UPDATE packages SET customer_lat = ?, customer_lng = ?, customer_location_quality = 'confirmed', updated_at = ? WHERE id = ? AND restaurant_id = ? AND status NOT IN ('delivered', 'failed', 'cancelled')")
+      .run(Number(body.latitude), Number(body.longitude), nowIso(), pkg.id, session.restaurant_id);
+    if (!changedPoint.changes) { sendJson(res, 409, { error: 'Paket tamamlandı; noktası değiştirilemedi.' }); return; }
+    writeAuditLog({ actorRole: 'restaurant', actorId: session.restaurant_id, action: 'delivery_point_corrected', details: { packageId: pkg.id } });
+    broadcastLiveEvent({ type: 'package-status', restaurantId: session.restaurant_id, courierId: pkg.assigned_courier_id, packageId: pkg.id, message: 'Teslimat noktası güncellendi.' });
+    sendJson(res, 200, { ok: true, latitude: Number(body.latitude), longitude: Number(body.longitude), quality: 'confirmed' });
     return;
   }
 

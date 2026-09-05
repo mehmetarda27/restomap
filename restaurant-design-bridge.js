@@ -762,6 +762,41 @@
     }).join("");
     const products = itemRows || '<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Ürün bilgisi platformdan gelmedi.</div>';
     modal(`Sipariş Detayı · ${pkg.trackingNo || pkg.externalOrderNo || pkg.id}`, `<div class="space-y-4 text-sm"><section><div class="flex items-center justify-between mb-2"><h3 class="font-bold text-base">Sipariş İçeriği</h3><span class="text-xs text-slate-500">${items.length ? `${items.length} kalem` : "Bilgi yok"}</span></div><div class="rounded-lg border overflow-hidden" data-order-items>${products}</div></section><section><h3 class="font-bold text-base mb-2">Teslimat Bilgileri</h3><div class="space-y-1"><div class="zg-list-row"><b>Durum</b><span>${safe(label)}</span></div><div class="zg-list-row"><b>Müşteri</b><span>${safe(pkg.customerName || "-")}</span></div><div class="zg-list-row"><b>Telefon</b><a class="text-blue-600" href="tel:${safe(pkg.phone)}">${safe(pkg.phone || "-")}</a></div><div class="zg-list-row"><b>Adres</b><span class="text-right max-w-md">${safe(pkg.deliveryAddress || "-")}</span></div><div class="zg-list-row"><b>Müşteri notu</b><span>${safe(pkg.customerNote || "-")}</span></div><div class="zg-list-row"><b>Ödeme</b><span>${safe(pkg.paymentMethod || "-")} · ${formatMoney(pkg.orderAmount)}</span></div><div class="zg-list-row"><b>Kurye</b><span>${safe(courier?.name || courier?.fullName || "Atanmadı")}</span></div><div class="zg-list-row"><b>Oluşturulma</b><span>${dateTime(pkg.createdAt)}</span></div></div></section></div>`);
+    if (!['delivered', 'failed', 'cancelled'].includes(pkg.status)) {
+      const button = document.createElement('button'); button.dataset.editPoint = 'true'; button.className = 'zg-button';
+      button.textContent = pkg.customerLocationQuality === 'confirmed' ? 'Teslimat noktasını düzelt' : 'Yaklaşık / doğrulanmamış nokta · haritadan düzelt';
+      button.onclick = () => editDeliveryPoint(pkg);
+      document.querySelector('.zg-modal-root .zg-modal-body')?.append(button);
+    }
+  }
+
+  async function editDeliveryPoint(pkg) {
+    const root = modal('Teslimat noktasını düzelt', '<p>Haritaya dokunarak teslimat girişini seçin. Kaydetmeden önce müşterinin adresini doğrulayın.</p><div data-point-map style="height:330px;width:100%;margin:12px 0"></div><p data-point-status>Bir nokta seçin.</p><button data-point-save disabled class="zg-button">Seçilen noktayı kaydet</button>');
+    let map;
+    try {
+      if (!window.L) {
+        const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/vendor/leaflet.css'; document.head.append(link);
+        await new Promise((resolve, reject) => { const script = document.createElement('script'); script.src = '/vendor/leaflet.js'; script.onload = resolve; script.onerror = reject; document.head.append(script); });
+      }
+      if (!root.isConnected) return;
+      const valid = (lat, lng) => lat != null && lng != null && lat !== '' && lng !== '' && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+      const restaurant = state.data?.restaurants?.[0] || {};
+      const center = valid(pkg.customerLat, pkg.customerLng) ? [Number(pkg.customerLat), Number(pkg.customerLng)] : valid(restaurant.latitude, restaurant.longitude) ? [Number(restaurant.latitude), Number(restaurant.longitude)] : [36.8, 34.63];
+      map = window.L.map(root.querySelector('[data-point-map]')).setView(center, 16);
+      window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+      let selected = null, marker = null;
+      const button = root.querySelector('[data-point-save]');
+      map.on('click', event => { selected = event.latlng; if (marker) marker.setLatLng(selected); else marker = window.L.marker(selected).addTo(map); button.disabled = false; root.querySelector('[data-point-status]').textContent = 'Yeni teslimat noktası seçildi. Kaydet ile onaylayın.'; });
+      button.onclick = async () => {
+        if (!selected) return;
+        button.disabled = true;
+        try {
+          await api(`/api/restaurant/packages/${encodeURIComponent(pkg.id)}/delivery-point`, { method: 'PATCH', body: JSON.stringify({ latitude: selected.lat, longitude: selected.lng }) });
+          map.remove(); root.remove(); await load(true);
+        } catch (error) { root.querySelector('[data-point-status]').textContent = error.message; button.disabled = false; }
+      };
+      root.querySelector('[data-close]').addEventListener('click', () => map.remove());
+    } catch { root.querySelector('[data-point-status]').textContent = 'Harita yüklenemedi. Bağlantıyı kontrol edip tekrar açın.'; }
   }
 
   function normalizedPaperSize(value) {

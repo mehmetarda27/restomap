@@ -126,6 +126,25 @@ test("new restaurant design filters closed orders and subscribes to named live e
     assert.match(detailModalText, /2× Tantuni/);
     assert.match(detailModalText, /Ekstra: Kaşar/);
     assert.match(detailModalText, /Not: Acısız/);
+    let mapClick;
+    let correctionRequest;
+    const savedData = hooks.state.data;
+    const fakeMap = { setView() { return this; }, on(name, fn) { if (name === 'click') mapClick = fn; }, remove() {} };
+    dom.window.L = { map: () => fakeMap, tileLayer: () => ({ addTo() {} }), marker: () => ({ addTo() { return this; }, setLatLng() {} }) };
+    const priorFetch = dom.window.fetch;
+    dom.window.fetch = async (url, options) => {
+      if (String(url).includes('/delivery-point')) correctionRequest = { url, options };
+      return jsonResponse(savedData);
+    };
+    dom.window.document.querySelector('[data-edit-point]').click();
+    assert.equal(dom.window.document.querySelector('[data-point-save]').disabled, true);
+    mapClick({ latlng: { lat: 36.815, lng: 34.625 } });
+    dom.window.document.querySelector('[data-point-save]').click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+    assert.match(correctionRequest.url, /pkg_active\/delivery-point$/);
+    assert.equal(correctionRequest.options.method, 'PATCH');
+    assert.deepEqual(JSON.parse(correctionRequest.options.body), { latitude: 36.815, longitude: 34.625 });
+    dom.window.fetch = priorFetch;
     dom.window.document.querySelector(".zg-modal-root [data-close]")?.click();
     dom.window.document.querySelector('#restaurantOrders [data-action="print"]').click();
     const printModal = dom.window.document.querySelector(".zg-modal-root");

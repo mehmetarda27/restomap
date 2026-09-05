@@ -22,6 +22,12 @@
   let mapWatchId = null;
   let mapHeartbeatId = null;
   let lastKnownCourierCoords = null;
+  let gpsObservedAt = 0;
+  let followCourier = true;
+  let gpsStatusControl = null;
+  let routeRetryAt = 0;
+  let routeRequestedAt = 0;
+  let routeGeometry = [];
   let locationHeartbeatBusy = false;
   let leafletLoader = null;
   let leafletMap = null;
@@ -125,6 +131,7 @@
       .map-bg .leaflet-bottom.leaflet-left{left:12px;right:12px;bottom:190px}.map-bg .leaflet-bottom.leaflet-left .leaflet-control{margin:0}.delivera-navigation-card{box-sizing:border-box;width:min(330px,calc(100vw - 48px));display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px;border:1px solid #b9d7f5;border-radius:14px;background:#fffffff2;color:#15324a;box-shadow:0 9px 28px #001d3640;backdrop-filter:blur(7px);font-family:Inter,sans-serif}.delivera-navigation-card[hidden]{display:none}.delivera-navigation-card small{display:block;color:#526675;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.delivera-navigation-card strong{display:block;margin-top:3px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.delivera-navigation-card span{display:block;margin-top:2px;color:#526675;font-size:11px}.delivera-navigation-card button{min-width:96px;min-height:42px;border:0;border-radius:10px;background:#0061a4;color:#fff;font-size:11px;font-weight:800;box-shadow:0 4px 12px #0061a43d}.delivera-navigation-card button:active{transform:translateY(1px)}
       .delivera-history-date{display:flex;align-items:center;gap:5px;color:#66717d;font-size:11px;margin:8px 0}.delivera-history-details{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}.delivera-history-details>div{padding:9px;border-radius:8px;background:#f1f4f7;min-width:0}.delivera-history-details span{display:block;color:#66717d;font-size:10px;margin-bottom:3px}.delivera-history-details strong{display:block;font-size:12px;overflow-wrap:anywhere}
       .delivera-day-close-summary{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0}.delivera-day-close-summary>div{padding:12px;border-radius:10px;background:#eef6ff}.delivera-day-close-summary span{display:block;color:#66717d;font-size:10px;margin-bottom:5px}.delivera-day-close-summary strong{display:block;color:#191c1e;font:700 14px 'JetBrains Mono',monospace}.delivera-day-close-note{box-sizing:border-box;width:100%;min-height:76px;resize:vertical;margin:8px 0 4px;padding:11px;border:1px solid #bfc7d4;border-radius:9px;background:#fff;font:500 13px Inter,sans-serif}.delivera-day-close-warning{padding:10px 12px;border-radius:9px;background:#fff3cd;color:#755b00;font-size:12px}.delivera-day-close-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}.delivera-day-close-actions button{min-height:48px;border:0;border-radius:9px;font-weight:800}.delivera-day-close-cancel{background:#e8eaed;color:#3f484f}.delivera-day-close-submit{background:#13852d;color:#fff}.delivera-day-close-submit:disabled{opacity:.55}
+      .restomap-gps-stale .delivera-courier-dot::after{animation:none;opacity:0}
       @media(max-width:480px){.delivera-app-shell{box-shadow:none}}
     `;
     document.head.append(style);
@@ -794,6 +801,48 @@
     return navigationMapControlElement;
   }
 
+  function updateGpsStatus() {
+    if (!gpsStatusControl) return;
+    const age = gpsObservedAt ? Math.max(0, Math.floor((Date.now() - gpsObservedAt) / 1000)) : null;
+    const stale = age === null || age > 30;
+    gpsStatusControl.querySelector('span').textContent = age === null ? 'GPS konumu bekleniyor' : `Konum ${age} saniye önce alındı${stale ? ' · GPS bekleniyor' : ''}`;
+    gpsStatusControl.querySelector('button').hidden = followCourier;
+    gpsStatusControl.querySelector('button').style.display = followCourier ? 'none' : 'block';
+    document.querySelector('.delivera-courier-dot')?.style.setProperty('background', stale ? '#78838e' : '#0878d1');
+    document.querySelector('.map-bg')?.classList.toggle('restomap-gps-stale', stale);
+  }
+
+  function installGpsControl(L) {
+    const control = L.control({ position: 'topright' });
+    control.onAdd = () => {
+      const element = L.DomUtil.create('div');
+      element.style.cssText = 'margin-top:150px;max-width:210px;padding:8px;background:white;border-radius:10px;font-size:11px;box-shadow:0 2px 8px #0003';
+      element.innerHTML = '<span></span><button type="button" style="display:block;padding:8px;color:#0061a4">Konumuma dön</button>';
+      element.querySelector('button').onclick = () => { followCourier = true; if (courierMapMarker) leafletMap.setView(courierMapMarker.getLatLng(), leafletMap.getZoom()); updateGpsStatus(); };
+      L.DomEvent.disableClickPropagation(element);
+      gpsStatusControl = element;
+      return element;
+    };
+    control.addTo(leafletMap);
+    leafletMap.on('dragstart', () => { followCourier = false; updateGpsStatus(); });
+    updateGpsStatus();
+  }
+
+  function distanceFromRouteMeters(point, geometry) {
+    if (geometry.length < 2) return Infinity;
+    const scale = Math.cos(point.latitude * Math.PI / 180);
+    let minimum = Infinity;
+    for (let i = 1; i < geometry.length; i++) {
+      const a = geometry[i - 1], b = geometry[i];
+      const ax = (a[0] - point.longitude) * 111320 * scale, ay = (a[1] - point.latitude) * 111320;
+      const bx = (b[0] - point.longitude) * 111320 * scale, by = (b[1] - point.latitude) * 111320;
+      const dx = bx - ax, dy = by - ay;
+      const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1)));
+      minimum = Math.min(minimum, Math.hypot(ax + t * dx, ay + t * dy));
+    }
+    return minimum;
+  }
+
   function setNavigationMapControl(L, target, summary) {
     const card = ensureNavigationMapControl(L);
     if (!target) {
@@ -801,7 +850,8 @@
       return;
     }
     card.hidden = false;
-    card.querySelector("[data-navigation-type]").textContent = target.type === "customer" ? "Müşteri rotası" : "Restoran rotası";
+    const pkg = activePackages().find(item => item.id === target.packageId);
+    card.querySelector("[data-navigation-type]").textContent = target.type === "customer" ? (pkg?.customerLocationQuality === 'confirmed' ? 'Müşteri rotası' : 'Yaklaşık müşteri noktası · doğrulayın') : "Restoran rotası";
     card.querySelector("[data-navigation-name]").textContent = target.name;
     card.querySelector("[data-navigation-summary]").textContent = summary;
     const openButton = card.querySelector("[data-navigation-open]");
@@ -816,6 +866,8 @@
     navigationRouteRequestId += 1;
     lastNavigationRouteKey = "";
     lastNavigationRouteSummary = "";
+    routeGeometry = [];
+    routeRetryAt = 0;
     if (navigationRouteLayer) navigationRouteLayer.remove();
     navigationRouteLayer = null;
     if (navigationMapControlElement) setNavigationMapControl(L, null, "");
@@ -836,16 +888,24 @@
       Number(target.latitude).toFixed(5),
       Number(target.longitude).toFixed(5),
     ].join("|");
-    if (key === lastNavigationRouteKey && navigationRouteLayer) {
+    const now = Date.now();
+    const deviated = routeGeometry.length > 1 && distanceFromRouteMeters(courierPoint, routeGeometry) > 60;
+    const retryDue = routeRetryAt > 0 && now >= routeRetryAt;
+    if (key === lastNavigationRouteKey && navigationRouteLayer && !retryDue && !(deviated && now - routeRequestedAt > 10000)) {
       setNavigationMapControl(L, target, lastNavigationRouteSummary || `${directKm.toFixed(1)} km · navigasyon hazır`);
       return;
     }
     lastNavigationRouteKey = key;
+    routeRequestedAt = now;
+    routeRetryAt = 0;
+    routeGeometry = [];
     lastNavigationRouteSummary = `Rota hesaplanıyor · ${directKm.toFixed(1)} km kuş uçuşu`;
     setNavigationMapControl(L, target, lastNavigationRouteSummary);
     navigationRouteAbortController?.abort();
     navigationRouteAbortController = new AbortController();
     const requestId = ++navigationRouteRequestId;
+    const controller = navigationRouteAbortController;
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
     if (navigationRouteLayer) navigationRouteLayer.remove();
     navigationRouteLayer = L.polyline([
       [courierPoint.latitude, courierPoint.longitude],
@@ -861,8 +921,10 @@
       const routeResult = payload?.routes?.[0];
       const coordinates = routeResult?.geometry?.coordinates;
       if (!Array.isArray(coordinates) || coordinates.length < 2) throw new Error("Rota geometrisi bulunamadı.");
+      if (!coordinates.every(pair => Array.isArray(pair) && validMapCoordinates(pair[1], pair[0]))) throw new Error('Geçersiz rota');
       if (requestId !== navigationRouteRequestId || key !== lastNavigationRouteKey) return;
       navigationRouteLayer.remove();
+      routeGeometry = coordinates;
       navigationRouteLayer = L.polyline(coordinates.map(([longitude, latitude]) => [latitude, longitude]), {
         color: "#0061a4",
         weight: 6,
@@ -875,13 +937,22 @@
       lastNavigationRouteSummary = `${distanceKm.toFixed(1)} km · yaklaşık ${durationMinutes} dk`;
       setNavigationMapControl(L, target, lastNavigationRouteSummary);
     } catch (error) {
-      if (error?.name === "AbortError" || requestId !== navigationRouteRequestId) return;
-      lastNavigationRouteSummary = `${directKm.toFixed(1)} km · navigasyon hazır`;
+      if (requestId !== navigationRouteRequestId) return;
+      routeRetryAt = Date.now() + 15000;
+      lastNavigationRouteSummary = `${directKm.toFixed(1)} km kuş uçuşu · rota tekrar denenecek`;
       setNavigationMapControl(L, target, lastNavigationRouteSummary);
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
 
   async function updateRealLiveMap(latitude, longitude) {
+    const serverGps = new Date(workspace?.courier?.gpsObservedAt || '').getTime();
+    if (lastKnownCourierCoords && gpsObservedAt > (Number.isFinite(serverGps) ? serverGps : 0)) {
+      latitude = lastKnownCourierCoords.latitude;
+      longitude = lastKnownCourierCoords.longitude;
+    }
+    if (Number.isFinite(serverGps)) gpsObservedAt = Math.max(gpsObservedAt, serverGps);
     const lat = Number(latitude);
     const lon = Number(longitude);
     const safeLat = Number.isFinite(lat) ? lat : 41.0082;
@@ -895,6 +966,7 @@
       if (!leafletMap) {
         canvas.replaceChildren();
         leafletMap = L.map(canvas, { zoomControl: true, attributionControl: true, preferCanvas: true }).setView([safeLat, safeLon], 15);
+        installGpsControl(L);
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
           maxZoom: 19,
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -928,7 +1000,8 @@
         else leafletMap.setView(courierLatLng, Math.max(leafletMap.getZoom(), 15));
       }
       void updateNavigationRoute(L, { latitude: safeLat, longitude: safeLon });
-      leafletMap.panInside(courierLatLng, { paddingTopLeft: [75, 145], paddingBottomRight: [150, 145], animate: true });
+      if (followCourier) leafletMap.setView(courierLatLng, leafletMap.getZoom(), { animate: false });
+      updateGpsStatus();
       requestAnimationFrame(() => leafletMap?.invalidateSize(false));
     } catch (error) {
       console.error("Canlı harita başlatılamadı", error);
@@ -981,7 +1054,7 @@
     try {
       const next = await api("/api/courier/location", {
         method: "PATCH",
-        body: JSON.stringify({ latitude, longitude, available: true, locationOnly: true }),
+        body: JSON.stringify({ latitude, longitude, available: true, locationOnly: true, observedAt: gpsObservedAt || null }),
       });
       lastLocationPushAt = Date.now();
       if (next?.courier && workspace) workspace.courier = { ...workspace.courier, ...next.courier };
@@ -997,7 +1070,7 @@
     if (!navigator.geolocation || !workspace?.courier?.available) return;
     const initialLatitude = Number(workspace.courier?.latitude);
     const initialLongitude = Number(workspace.courier?.longitude);
-    if (Number.isFinite(initialLatitude) && Number.isFinite(initialLongitude)) {
+    if (!lastKnownCourierCoords && Number.isFinite(initialLatitude) && Number.isFinite(initialLongitude)) {
       lastKnownCourierCoords = { latitude: initialLatitude, longitude: initialLongitude };
     }
     if (mapHeartbeatId === null) {
@@ -1008,12 +1081,13 @@
       const latitude = Number(position.coords.latitude.toFixed(6));
       const longitude = Number(position.coords.longitude.toFixed(6));
       lastKnownCourierCoords = { latitude, longitude };
+      gpsObservedAt = Math.min(Date.now(), Number(position.timestamp) || Date.now());
       updateRealLiveMap(latitude, longitude);
       if (Date.now() - lastLocationPushAt < 10000 || connectionBusy || locationHeartbeatBusy) return;
       lastLocationPushAt = Date.now();
       locationHeartbeatBusy = true;
       try {
-        const next = await api("/api/courier/location", { method: "PATCH", body: JSON.stringify({ latitude, longitude, available: true, locationOnly: true }) });
+        const next = await api("/api/courier/location", { method: "PATCH", body: JSON.stringify({ latitude, longitude, available: true, locationOnly: true, observedAt: gpsObservedAt }) });
         if (next?.courier && workspace) workspace.courier = next.courier;
       } catch (error) { toast(error.message || "Canlı konum güncellenemedi.", "error"); }
       finally { locationHeartbeatBusy = false; }
@@ -1565,8 +1639,10 @@
   loadWorkspace();
   if (!globalThis.__DELIVERA_TEST__) pollId = window.setInterval(loadWorkspace, 12000);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") pushLiveLocationHeartbeat();
+    if (document.visibilityState === "visible") { startLiveLocation(); pushLiveLocationHeartbeat(); scheduleCourierMapRefresh(); }
   });
+  if (!globalThis.__DELIVERA_TEST__ && route === '/courier.html') window.setInterval(() => { updateGpsStatus(); if (workspace?.courier?.available && mapWatchId === null) startLiveLocation(); }, 5000);
+  window.addEventListener('online', () => { routeRetryAt = 1; startLiveLocation(); scheduleCourierMapRefresh(); });
   window.addEventListener("focus", pushLiveLocationHeartbeat);
   window.addEventListener("online", pushLiveLocationHeartbeat);
   window.addEventListener("beforeunload", () => { window.clearInterval(pollId); window.clearInterval(courierMapPoll); window.clearTimeout(courierMapRefreshTimer); stopLiveLocation(); eventStream?.close(); });

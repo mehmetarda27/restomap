@@ -307,6 +307,7 @@ public class DeliveraCourierService extends Service implements LocationListener 
             JSONObject payload = new JSONObject();
             payload.put("latitude", location.getLatitude());
             payload.put("longitude", location.getLongitude());
+            payload.put("observedAt", location.getTime());
             payload.put("available", true);
             payload.put("locationOnly", true);
             HttpResult result = request("PATCH", "/api/courier/location", payload.toString(), accessToken());
