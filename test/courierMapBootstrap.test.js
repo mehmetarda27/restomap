@@ -65,3 +65,43 @@ test("courier map switches each package from restaurant to customer after depart
   assert.match(source, /destinationKey !== lastDestinationMapKey/);
   assert.match(source, /leafletMap\.fitBounds/);
 });
+
+test("courier navigation follows the package flow without changing its status", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "courier-design-bridge.js"), "utf8");
+  const start = source.indexOf("function validMapCoordinates");
+  const end = source.indexOf("\n  function liveMapBounds", start);
+  assert.ok(start >= 0 && end > start, "navigation target helpers are missing");
+
+  const helpers = new Function(`${source.slice(start, end)}; return { navigationTargetForPackages, navigationRouteUrl, externalNavigationUrl, directDistanceKm };`)();
+  const pkg = {
+    id: "pkg-navigation",
+    status: "accepted_by_courier",
+    restaurantName: "Rota Restoran",
+    restaurantLat: 36.800001,
+    restaurantLng: 34.600001,
+    recipient: "Rota Müşteri",
+    customerLat: 36.810001,
+    customerLng: 34.610001,
+  };
+
+  const restaurantTarget = helpers.navigationTargetForPackages([pkg]);
+  assert.equal(restaurantTarget.type, "restaurant");
+  assert.equal(restaurantTarget.name, "Rota Restoran");
+  assert.equal(pkg.status, "accepted_by_courier", "target selection must not mutate package status");
+
+  const customerTarget = helpers.navigationTargetForPackages([{ ...pkg, status: "on_route" }]);
+  assert.equal(customerTarget.type, "customer");
+  assert.equal(customerTarget.name, "Rota Müşteri");
+  assert.match(helpers.navigationRouteUrl({ latitude: 36.79, longitude: 34.59 }, customerTarget), /34\.590000,36\.790000;34\.610001,36\.810001/);
+  assert.match(decodeURIComponent(helpers.externalNavigationUrl(customerTarget)), /destination=36\.810001,34\.610001/);
+  assert.ok(helpers.directDistanceKm({ latitude: 36.8, longitude: 34.6 }, customerTarget) > 0);
+
+  const prioritized = helpers.navigationTargetForPackages([
+    pkg,
+    { ...pkg, id: "pkg-on-road", status: "on_route", recipient: "Öncelikli Müşteri" },
+  ]);
+  assert.equal(prioritized.type, "customer");
+  assert.equal(prioritized.name, "Öncelikli Müşteri");
+  assert.match(source, /window\.open\(href, "_blank", "noopener,noreferrer"\)/);
+  assert.match(source, /void updateNavigationRoute\(L, \{ latitude: safeLat, longitude: safeLon \}\)/);
+});

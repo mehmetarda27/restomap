@@ -27,6 +27,13 @@
   let leafletMap = null;
   let courierMapMarker = null;
   let destinationMapMarkers = [];
+  let navigationRouteLayer = null;
+  let navigationMapControl = null;
+  let navigationMapControlElement = null;
+  let navigationRouteAbortController = null;
+  let navigationRouteRequestId = 0;
+  let lastNavigationRouteKey = "";
+  let lastNavigationRouteSummary = "";
   let lastDestinationMapKey = "";
   let courierMapPoll = null;
   let courierMapRefreshTimer = null;
@@ -115,6 +122,7 @@
       .delivera-report-detail{display:grid;gap:12px}.delivera-detail-title{display:flex;align-items:center;gap:10px;margin:0}.delivera-detail-title span{color:#0061a4}.delivera-detail-card{background:#fff;border:1px solid #d8dadd;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(25,28,30,.05)}.delivera-detail-card h3{font:600 16px 'Hanken Grotesk',sans-serif;margin:0 0 12px}.delivera-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.delivera-detail-metric{background:#f2f4f7;border-radius:9px;padding:12px;min-width:0}.delivera-detail-metric span{display:block;color:#66717d;font-size:11px;margin-bottom:5px}.delivera-detail-metric strong{display:block;color:#191c1e;font:700 15px 'JetBrains Mono',monospace;overflow-wrap:anywhere}.delivera-detail-list{display:grid;gap:8px}.delivera-detail-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:11px 0;border-bottom:1px solid #eceef1}.delivera-detail-row:last-child{border-bottom:0}.delivera-detail-row span{font-size:12px;color:#66717d}.delivera-detail-row strong{text-align:right;font-size:12px}.delivera-detail-empty{color:#66717d;font-size:13px;padding:8px 0}.delivera-report-back{width:100%;min-height:46px;border:1px solid #0061a4;border-radius:10px;background:#fff;color:#0061a4;font-weight:700}
       .map-bg.leaflet-container{z-index:0;background:#dce9f4;font-family:Inter,sans-serif}.map-bg .leaflet-control-zoom{margin-top:12px}.map-bg .leaflet-control-attribution{font-size:8px}.delivera-leaflet-courier-icon,.delivera-leaflet-restaurant-icon,.delivera-leaflet-customer-icon{background:transparent!important;border:0!important;overflow:visible!important}.delivera-courier-dot{position:relative;width:26px;height:26px;border:4px solid #fff;border-radius:50%;background:#0878d1;box-shadow:0 3px 12px #003b6670;display:block}.delivera-courier-dot::after{content:"";position:absolute;inset:50% auto auto 50%;width:54px;height:54px;border-radius:50%;background:#2196f34d;transform:translate(-50%,-50%);animation:delivera-marker-pulse 1.8s ease-out infinite}.delivera-restaurant-dot,.delivera-customer-dot{position:relative;width:38px;height:38px;border:3px solid #fff;border-radius:50%;color:#fff;display:grid;place-items:center;cursor:pointer}.delivera-restaurant-dot{background:#f57c00;box-shadow:0 3px 12px #4d260066}.delivera-customer-dot{background:#b3261e;box-shadow:0 3px 12px #5f120d70}.delivera-restaurant-dot .material-symbols-outlined,.delivera-customer-dot .material-symbols-outlined{font-size:20px}.delivera-restaurant-marker-label{position:absolute;left:50%;top:42px;transform:translateX(-50%);max-width:145px;width:max-content;padding:5px 8px;border-radius:8px;background:#fff;color:#263238;box-shadow:0 2px 9px #0003;font:700 11px Inter,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.delivera-side-menu{transition:transform .22s ease}.delivera-side-menu-trigger{cursor:pointer;user-select:none}.delivera-side-menu.is-collapsed{transform:translateX(calc(100% + 13px))}.delivera-side-menu.is-collapsed .delivera-side-menu-trigger{transform:translateY(-50%)}@keyframes delivera-marker-pulse{0%{transform:translate(-50%,-50%) scale(.45);opacity:.8}100%{transform:translate(-50%,-50%) scale(1.35);opacity:0}}.delivera-shift-start{width:100%;min-height:82px;border:1px solid #5bd477;border-radius:12px;background:#d7f8de;color:#005313;padding:14px 18px;display:flex;align-items:center;gap:14px;text-align:left}.delivera-shift-start .material-symbols-outlined{width:50px;height:50px;border-radius:10px;background:#006e1c;color:#fff;display:grid;place-items:center;font-size:30px}.delivera-shift-start strong{display:block;font-size:16px}.delivera-shift-start small{display:block;color:#276636;margin-top:3px}.delivera-shift-start:disabled{opacity:.6}
       .map-bg .leaflet-control-zoom{margin-top:150px!important;margin-left:12px!important}.delivera-package-meta{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:10px 0}.delivera-package-meta span{padding:8px;border-radius:8px;background:#f1f4f7;color:#46515c;font-size:11px}.delivera-customer-phone{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;padding:10px;border:1px solid #c7d9ee;border-radius:8px;background:#f7fbff;color:#263238;font-size:12px}.delivera-customer-phone span{color:#66717d;font-size:10px}.delivera-customer-phone strong{font:700 13px 'JetBrains Mono',monospace;overflow-wrap:anywhere;text-align:right}.delivera-package-address{padding:10px;border-radius:8px;background:#eef6ff;color:#263238;font-size:12px}.delivera-package-field{display:grid;gap:5px;margin-top:10px;font-size:11px;font-weight:700}.delivera-package-field select,.delivera-package-field input{width:100%;height:44px;border:1px solid #bfc7d4;border-radius:9px;padding:0 10px;background:#fff}.delivera-package-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.delivera-package-actions button{min-height:44px;border:0;border-radius:9px;font-weight:700}.delivera-package-actions .primary{background:#0061a4;color:#fff}.delivera-package-actions .secondary{background:#e1efff;color:#00497d}.delivera-package-actions .danger{background:#ffdad6;color:#ba1a1a}.delivera-package-actions .success{background:#c8f7d3;color:#006e1c}.delivera-package-contact{display:flex;gap:8px;margin-top:8px}.delivera-package-contact a{flex:1;display:flex;justify-content:center;align-items:center;min-height:40px;border:1px solid #0061a4;border-radius:8px;color:#0061a4;font-weight:700;font-size:12px;text-decoration:none}.delivera-chart-bars{position:absolute;left:28px;right:0;bottom:24px;top:3px;display:flex;align-items:flex-end;justify-content:space-around;gap:8px}.delivera-chart-bar{flex:1;max-width:28px;min-height:3px;border-radius:7px 7px 2px 2px;background:linear-gradient(#2196f3,#0061a4);transition:height .25s ease}.delivera-chart-bar[title="0"]{opacity:.22}
+      .map-bg .leaflet-bottom.leaflet-left{left:12px;right:12px;bottom:190px}.map-bg .leaflet-bottom.leaflet-left .leaflet-control{margin:0}.delivera-navigation-card{box-sizing:border-box;width:min(330px,calc(100vw - 48px));display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px;border:1px solid #b9d7f5;border-radius:14px;background:#fffffff2;color:#15324a;box-shadow:0 9px 28px #001d3640;backdrop-filter:blur(7px);font-family:Inter,sans-serif}.delivera-navigation-card[hidden]{display:none}.delivera-navigation-card small{display:block;color:#526675;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.delivera-navigation-card strong{display:block;margin-top:3px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.delivera-navigation-card span{display:block;margin-top:2px;color:#526675;font-size:11px}.delivera-navigation-card button{min-width:96px;min-height:42px;border:0;border-radius:10px;background:#0061a4;color:#fff;font-size:11px;font-weight:800;box-shadow:0 4px 12px #0061a43d}.delivera-navigation-card button:active{transform:translateY(1px)}
       .delivera-history-date{display:flex;align-items:center;gap:5px;color:#66717d;font-size:11px;margin:8px 0}.delivera-history-details{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}.delivera-history-details>div{padding:9px;border-radius:8px;background:#f1f4f7;min-width:0}.delivera-history-details span{display:block;color:#66717d;font-size:10px;margin-bottom:3px}.delivera-history-details strong{display:block;font-size:12px;overflow-wrap:anywhere}
       .delivera-day-close-summary{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0}.delivera-day-close-summary>div{padding:12px;border-radius:10px;background:#eef6ff}.delivera-day-close-summary span{display:block;color:#66717d;font-size:10px;margin-bottom:5px}.delivera-day-close-summary strong{display:block;color:#191c1e;font:700 14px 'JetBrains Mono',monospace}.delivera-day-close-note{box-sizing:border-box;width:100%;min-height:76px;resize:vertical;margin:8px 0 4px;padding:11px;border:1px solid #bfc7d4;border-radius:9px;background:#fff;font:500 13px Inter,sans-serif}.delivera-day-close-warning{padding:10px 12px;border-radius:9px;background:#fff3cd;color:#755b00;font-size:12px}.delivera-day-close-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}.delivera-day-close-actions button{min-height:48px;border:0;border-radius:9px;font-weight:800}.delivera-day-close-cancel{background:#e8eaed;color:#3f484f}.delivera-day-close-submit{background:#13852d;color:#fff}.delivera-day-close-submit:disabled{opacity:.55}
       @media(max-width:480px){.delivera-app-shell{box-shadow:none}}
@@ -616,6 +624,52 @@
     return [...grouped.values()];
   }
 
+  function navigationTargetForPackages(packages = activePackages()) {
+    const active = packages.filter((pkg) => !["delivered", "failed", "cancelled"].includes(String(pkg.status || "")));
+    const ordered = [
+      ...active.filter((pkg) => ["on_route", "picked_up"].includes(String(pkg.status || ""))),
+      ...active.filter((pkg) => String(pkg.status || "") === "accepted_by_courier"),
+      ...active.filter((pkg) => String(pkg.status || "") === "assigned"),
+      ...active.filter((pkg) => !["on_route", "picked_up", "accepted_by_courier", "assigned"].includes(String(pkg.status || ""))),
+    ];
+    for (const pkg of ordered) {
+      const customerTarget = ["on_route", "picked_up"].includes(String(pkg.status || ""));
+      const coordinates = customerTarget
+        ? validMapCoordinates(pkg.customerLat ?? pkg.customerLatitude, pkg.customerLng ?? pkg.customerLongitude)
+        : validMapCoordinates(pkg.restaurantLat ?? pkg.latitude, pkg.restaurantLng ?? pkg.longitude);
+      if (!coordinates) continue;
+      return {
+        ...coordinates,
+        type: customerTarget ? "customer" : "restaurant",
+        name: customerTarget ? (pkg.recipient || pkg.customerName || "Müşteri") : (pkg.restaurantName || "Restoran"),
+        packageId: pkg.id || "",
+      };
+    }
+    return null;
+  }
+
+  function navigationRouteUrl(courierPoint, target) {
+    const start = `${Number(courierPoint.longitude).toFixed(6)},${Number(courierPoint.latitude).toFixed(6)}`;
+    const end = `${Number(target.longitude).toFixed(6)},${Number(target.latitude).toFixed(6)}`;
+    return `https://router.project-osrm.org/route/v1/driving/${start};${end}?overview=full&geometries=geojson&steps=false`;
+  }
+
+  function externalNavigationUrl(target) {
+    const destination = `${Number(target.latitude).toFixed(6)},${Number(target.longitude).toFixed(6)}`;
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`;
+  }
+
+  function directDistanceKm(from, to) {
+    const radians = (value) => Number(value) * Math.PI / 180;
+    const earthRadiusKm = 6371;
+    const latDelta = radians(to.latitude - from.latitude);
+    const lonDelta = radians(to.longitude - from.longitude);
+    const startLat = radians(from.latitude);
+    const endLat = radians(to.latitude);
+    const a = Math.sin(latDelta / 2) ** 2 + Math.cos(startLat) * Math.cos(endLat) * Math.sin(lonDelta / 2) ** 2;
+    return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
   function liveMapBounds(latitude, longitude, restaurants = []) {
     const latitudes = [latitude, ...restaurants.map((item) => item.latitude)].filter(Number.isFinite);
     const longitudes = [longitude, ...restaurants.map((item) => item.longitude)].filter(Number.isFinite);
@@ -718,6 +772,115 @@
     return leafletLoader;
   }
 
+  function ensureNavigationMapControl(L) {
+    if (navigationMapControlElement) return navigationMapControlElement;
+    navigationMapControl = L.control({ position: "bottomleft" });
+    navigationMapControl.onAdd = () => {
+      const card = L.DomUtil.create("section", "delivera-navigation-card");
+      card.hidden = true;
+      card.setAttribute("aria-live", "polite");
+      card.innerHTML = '<div><small data-navigation-type>Rota</small><strong data-navigation-name>Hedef</strong><span data-navigation-summary>Rota hazırlanıyor…</span></div><button type="button" data-navigation-open>Navigasyonu Aç</button>';
+      const openButton = card.querySelector("[data-navigation-open]");
+      openButton.addEventListener("click", () => {
+        const href = openButton.dataset.href;
+        if (href) window.open(href, "_blank", "noopener,noreferrer");
+      });
+      L.DomEvent.disableClickPropagation(card);
+      L.DomEvent.disableScrollPropagation(card);
+      navigationMapControlElement = card;
+      return card;
+    };
+    navigationMapControl.addTo(leafletMap);
+    return navigationMapControlElement;
+  }
+
+  function setNavigationMapControl(L, target, summary) {
+    const card = ensureNavigationMapControl(L);
+    if (!target) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    card.querySelector("[data-navigation-type]").textContent = target.type === "customer" ? "Müşteri rotası" : "Restoran rotası";
+    card.querySelector("[data-navigation-name]").textContent = target.name;
+    card.querySelector("[data-navigation-summary]").textContent = summary;
+    const openButton = card.querySelector("[data-navigation-open]");
+    openButton.dataset.href = externalNavigationUrl(target);
+    openButton.textContent = target.type === "customer" ? "Müşteriye Git" : "Restorana Git";
+    openButton.setAttribute("aria-label", `${target.name} için navigasyonu aç`);
+  }
+
+  function clearNavigationRoute(L) {
+    navigationRouteAbortController?.abort();
+    navigationRouteAbortController = null;
+    navigationRouteRequestId += 1;
+    lastNavigationRouteKey = "";
+    lastNavigationRouteSummary = "";
+    if (navigationRouteLayer) navigationRouteLayer.remove();
+    navigationRouteLayer = null;
+    if (navigationMapControlElement) setNavigationMapControl(L, null, "");
+  }
+
+  async function updateNavigationRoute(L, courierPoint) {
+    const target = navigationTargetForPackages();
+    if (!target) {
+      clearNavigationRoute(L);
+      return;
+    }
+    const directKm = directDistanceKm(courierPoint, target);
+    const key = [
+      target.type,
+      target.packageId,
+      Number(courierPoint.latitude).toFixed(3),
+      Number(courierPoint.longitude).toFixed(3),
+      Number(target.latitude).toFixed(5),
+      Number(target.longitude).toFixed(5),
+    ].join("|");
+    if (key === lastNavigationRouteKey && navigationRouteLayer) {
+      setNavigationMapControl(L, target, lastNavigationRouteSummary || `${directKm.toFixed(1)} km · navigasyon hazır`);
+      return;
+    }
+    lastNavigationRouteKey = key;
+    lastNavigationRouteSummary = `Rota hesaplanıyor · ${directKm.toFixed(1)} km kuş uçuşu`;
+    setNavigationMapControl(L, target, lastNavigationRouteSummary);
+    navigationRouteAbortController?.abort();
+    navigationRouteAbortController = new AbortController();
+    const requestId = ++navigationRouteRequestId;
+    if (navigationRouteLayer) navigationRouteLayer.remove();
+    navigationRouteLayer = L.polyline([
+      [courierPoint.latitude, courierPoint.longitude],
+      [target.latitude, target.longitude],
+    ], { color: "#0061a4", weight: 5, opacity: 0.58, dashArray: "8 10", lineCap: "round" }).addTo(leafletMap);
+    try {
+      const response = await fetch(navigationRouteUrl(courierPoint, target), {
+        headers: { Accept: "application/json" },
+        signal: navigationRouteAbortController.signal,
+      });
+      if (!response.ok) throw new Error(`Rota servisi HTTP ${response.status}`);
+      const payload = await response.json();
+      const routeResult = payload?.routes?.[0];
+      const coordinates = routeResult?.geometry?.coordinates;
+      if (!Array.isArray(coordinates) || coordinates.length < 2) throw new Error("Rota geometrisi bulunamadı.");
+      if (requestId !== navigationRouteRequestId || key !== lastNavigationRouteKey) return;
+      navigationRouteLayer.remove();
+      navigationRouteLayer = L.polyline(coordinates.map(([longitude, latitude]) => [latitude, longitude]), {
+        color: "#0061a4",
+        weight: 6,
+        opacity: 0.9,
+        lineCap: "round",
+        lineJoin: "round",
+      }).addTo(leafletMap);
+      const distanceKm = Number(routeResult.distance || 0) / 1000;
+      const durationMinutes = Math.max(1, Math.round(Number(routeResult.duration || 0) / 60));
+      lastNavigationRouteSummary = `${distanceKm.toFixed(1)} km · yaklaşık ${durationMinutes} dk`;
+      setNavigationMapControl(L, target, lastNavigationRouteSummary);
+    } catch (error) {
+      if (error?.name === "AbortError" || requestId !== navigationRouteRequestId) return;
+      lastNavigationRouteSummary = `${directKm.toFixed(1)} km · navigasyon hazır`;
+      setNavigationMapControl(L, target, lastNavigationRouteSummary);
+    }
+  }
+
   async function updateRealLiveMap(latitude, longitude) {
     const lat = Number(latitude);
     const lon = Number(longitude);
@@ -764,6 +927,7 @@
         if (points.length > 1) leafletMap.fitBounds(L.latLngBounds(points), { paddingTopLeft: [55, 150], paddingBottomRight: [150, 150], maxZoom: 16 });
         else leafletMap.setView(courierLatLng, Math.max(leafletMap.getZoom(), 15));
       }
+      void updateNavigationRoute(L, { latitude: safeLat, longitude: safeLon });
       leafletMap.panInside(courierLatLng, { paddingTopLeft: [75, 145], paddingBottomRight: [150, 145], animate: true });
       requestAnimationFrame(() => leafletMap?.invalidateSize(false));
     } catch (error) {
