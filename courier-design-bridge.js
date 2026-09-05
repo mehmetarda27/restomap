@@ -329,13 +329,14 @@
     const notifications = workspace?.notifications || [];
     const modal = document.createElement("div");
     modal.className = "delivera-modal";
-    modal.innerHTML = `<section class="delivera-sheet"><div class="delivera-sheet-head"><h2>Bildirim Merkezi</h2><button class="delivera-close" type="button">×</button></div>${notificationPermission() !== "granted" ? '<button type="button" class="delivera-push-enable">Telefon Bildirimlerini ve Sesi Aç</button>' : ""}<button type="button" class="delivera-push-enable" data-read-all ${notifications.some((item) => item.unread !== false && !item.readAt) ? "" : "disabled"}>Tümünü Okundu İşaretle</button><div class="delivera-notification-list">${notifications.length ? notifications.map((item) => `<article class="delivera-notification-item"><strong>${esc(item.message)}</strong><time>${new Date(item.createdAt).toLocaleString("tr-TR")}${item.readAt ? ` · Okundu ${new Date(item.readAt).toLocaleString("tr-TR")}` : " · Okunmadı"}</time></article>`).join("") : '<div class="delivera-package"><p>Henüz bildirim yok.</p></div>'}</div></section>`;
+    modal.innerHTML = `<section class="delivera-sheet"><div class="delivera-sheet-head"><h2>Bildirim Merkezi</h2><button class="delivera-close" type="button">×</button></div>${notificationPermission() !== "granted" ? '<button type="button" class="delivera-push-enable">Telefon Bildirimlerini ve Sesi Aç</button>' : ""}<button type="button" class="delivera-push-enable" data-read-all ${(workspace?.unreadNotificationCount ?? notifications.some((item) => item.unread !== false && !item.readAt)) > 0 ? "" : "disabled"}>Tümünü Okundu İşaretle</button><div class="delivera-notification-list">${notifications.length ? notifications.map((item) => `<article class="delivera-notification-item"><strong>${esc(item.message)}</strong><time>${new Date(item.createdAt).toLocaleString("tr-TR")}${item.readAt ? ` · Okundu ${new Date(item.readAt).toLocaleString("tr-TR")}` : " · Okunmadı"}</time></article>`).join("") : '<div class="delivera-package"><p>Henüz bildirim yok.</p></div>'}</div></section>`;
     modal.querySelector(".delivera-close").onclick = () => modal.remove();
     modal.querySelector(".delivera-push-enable:not([data-read-all])")?.addEventListener("click", async () => { unlockAssignmentAudio(); const enabled = await initializeCourierPush({ requestPermission: true }); if (enabled) modal.querySelector(".delivera-push-enable:not([data-read-all])")?.remove(); });
     modal.querySelector("[data-read-all]")?.addEventListener("click", async () => {
       try {
         const result = await api("/api/courier/notifications/read", { method: "POST", body: JSON.stringify({}) });
         workspace.notifications = result.notifications || [];
+        workspace.unreadNotificationCount = result.unreadNotificationCount;
         hydrate();
         showNotificationCenter();
       } catch (error) { toast(error.message || "Bildirimler okundu işaretlenemedi.", "error"); }
@@ -1163,7 +1164,7 @@
     }
     const notificationBadge = document.querySelector(".delivera-notification-badge");
     if (notificationBadge) {
-      const unread = (workspace.notifications || []).filter((item) => item.unread !== false && !item.readAt).length;
+      const unread = workspace.unreadNotificationCount ?? (workspace.notifications || []).filter((item) => item.unread !== false && !item.readAt).length;
       notificationBadge.textContent = unread ? String(Math.min(99, unread)) : "";
     }
     textNodes("Aktif Paket").forEach((label) => { const count = label.parentElement?.querySelector("div"); if (count) count.textContent = packages.length; const button = label.closest("button"); if (button) button.onclick = () => packageSheet("active"); });

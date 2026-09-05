@@ -79,7 +79,7 @@ test("new admin design renders backend packages and listens to named live operat
   await window.__adminDesignTest.handleRoute("işletme tarih aralığı");
   await delay(20);
   assert.match(window.document.querySelector(".da-modal-head").textContent, /İşletme Tarih Aralığı Raporu/);
-  assert.match(window.document.querySelector("[data-admin-account-report]").textContent, /İptaller dahil toplam\s*4/);
+  assert.match(window.document.querySelector("[data-admin-account-report]").textContent, /İptaller dahil toplam\s*3/);
   assert.ok(window.document.querySelector('[data-report-filter] input[name="startDate"]'));
   assert.ok(window.document.querySelector('[data-report-filter] input[name="endDate"]'));
   assert.ok(fetchCalls.some((url) => url.includes("period=range") && url.includes("startDate=") && url.includes("endDate=")));

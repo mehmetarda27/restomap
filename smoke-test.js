@@ -705,6 +705,11 @@ async function run() {
       headers: courierHeaders,
       body: JSON.stringify({ status: "accepted_by_courier" }),
     });
+    // Confirm a deterministic fixture point through the real restaurant API; no geocoder dependency.
+    await request(`/api/restaurant/packages/${assignedPackage.id}/delivery-point`, {
+      method: "PATCH", headers: restaurantHeaders,
+      body: JSON.stringify({ latitude: restaurantLatitude + 0.001, longitude: restaurantLongitude + 0.001 }),
+    });
     courierWorkspace = await request(`/api/courier/packages/${assignedPackage.id}/status`, {
       method: "PATCH",
       headers: courierHeaders,
@@ -726,6 +731,11 @@ async function run() {
       method: "PATCH",
       headers: courier2Headers,
       body: JSON.stringify({ status: "accepted_by_courier" }),
+    });
+    // Confirm a deterministic fixture point through the real restaurant API; no geocoder dependency.
+    await request(`/api/restaurant/packages/${secondManualPackage.id}/delivery-point`, {
+      method: "PATCH", headers: restaurantHeaders,
+      body: JSON.stringify({ latitude: restaurantLatitude + 0.001, longitude: restaurantLongitude + 0.001 }),
     });
     await request(`/api/courier/packages/${secondManualPackage.id}/status`, {
       method: "PATCH",
@@ -772,6 +782,11 @@ async function run() {
       method: "PATCH",
       headers: cardCourierHeaders,
       body: JSON.stringify({ status: "accepted_by_courier" }),
+    });
+    // Confirm a deterministic fixture point through the real restaurant API; no geocoder dependency.
+    await request(`/api/restaurant/packages/${cardPackage.id}/delivery-point`, {
+      method: "PATCH", headers: restaurantHeaders,
+      body: JSON.stringify({ latitude: restaurantLatitude + 0.001, longitude: restaurantLongitude + 0.001 }),
     });
     await request(`/api/courier/packages/${cardPackage.id}/status`, {
       method: "PATCH",
@@ -841,6 +856,11 @@ async function run() {
     if (retryAcceptedPackage.assignedCourierId !== retryPackageAfterTimeout.assignedCourierId) {
       throw new Error("Kurye kabul ettikten sonra retry durmadi ve kurye degisti.");
     }
+    // Confirm a deterministic fixture point through the real restaurant API; no geocoder dependency.
+    await request(`/api/restaurant/packages/${retryPackageAfterTimeout.id}/delivery-point`, {
+      method: "PATCH", headers: restaurantHeaders,
+      body: JSON.stringify({ latitude: restaurantLatitude + 0.001, longitude: restaurantLongitude + 0.001 }),
+    });
     await request(`/api/courier/packages/${retryPackageAfterTimeout.id}/status`, {
       method: "PATCH",
       headers: retryCourierHeaders,
@@ -1123,6 +1143,11 @@ async function run() {
       method: "PATCH",
       headers: platformCourierHeaders,
       body: JSON.stringify({ status: "accepted_by_courier" }),
+    });
+    // Confirm a deterministic fixture point through the real restaurant API; no geocoder dependency.
+    await request(`/api/restaurant/packages/${assignedWebhookAfterDelivery.id}/delivery-point`, {
+      method: "PATCH", headers: restaurantHeaders,
+      body: JSON.stringify({ latitude: restaurantLatitude + 0.001, longitude: restaurantLongitude + 0.001 }),
     });
     await request(`/api/courier/packages/${assignedWebhookAfterDelivery.id}/status`, {
       method: "PATCH",

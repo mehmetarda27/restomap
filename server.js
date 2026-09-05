@@ -3538,12 +3538,19 @@ function persistNotificationsForEvent(event) {
     return;
   }
   persistNotification("admin", null, event);
-  if (event.restaurantId && !shouldSuppressRestaurantAlert(event)) {
-    persistNotification("restaurant", event.restaurantId, event);
+  const { recipients } = require("./services/pushDelivery");
+  for (const role of ["restaurant", "courier"]) {
+    if (role === "restaurant" && shouldSuppressRestaurantAlert(event)) continue;
+    const targets = recipients(role, event);
+    const ids = targets === null ? db.prepare(`SELECT id FROM ${role === "restaurant" ? "restaurants" : "couriers"}`).all().map((row) => row.id) : targets;
+    for (const id of ids) persistNotification(role, id, event);
   }
-  if (event.courierId) {
-    persistNotification("courier", event.courierId, event);
-  }
+}
+
+function unreadNotificationCount(role, id = null) {
+  return Number(id
+    ? db.prepare("SELECT COUNT(*) AS n FROM notification_logs WHERE target_role = ? AND target_id = ? AND read_at IS NULL").get(role, id).n
+    : db.prepare("SELECT COUNT(*) AS n FROM notification_logs WHERE target_role = ? AND target_id IS NULL AND read_at IS NULL").get(role).n);
 }
 
 function getNotifications(targetRole, targetId = null, limit = 20) {
@@ -3573,6 +3580,9 @@ function getNotifications(targetRole, targetId = null, limit = 20) {
 }
 
 function markNotificationsRead(targetRole, targetId = null, notificationIds = []) {
+  if (!Array.isArray(notificationIds) || notificationIds.length > 500 || notificationIds.some((id) => typeof id !== "string" || !id.trim())) {
+    throw httpError(400, "Bildirim kimlikleri gecerli bir liste olmali.");
+  }
   const stamp = nowIso();
   const ids = Array.isArray(notificationIds) ? notificationIds.map((id) => trimmed(id)).filter(Boolean) : [];
   const params = [stamp, targetRole];
@@ -3594,7 +3604,7 @@ function getAnnouncements(targetRole = null) {
   const rows = targetRole
     ? db.prepare(`
       SELECT * FROM announcements
-      WHERE active = 1 AND target_role = ?
+      WHERE active = 1 AND (target_role = ? OR target_role = 'all')
       ORDER BY datetime(updated_at) DESC
     `).all(targetRole)
     : db.prepare(`
@@ -4244,6 +4254,7 @@ function streamMatchesAudience(stream, event) {
   if (event.broadcast === true || event.targetRole === "all") {
     return true;
   }
+  if (event.announcementId && event.targetRole === stream.audience.role) return true;
   if (Array.isArray(event.audiences)) {
     return event.audiences.some((audience) => {
       if (!audience || audience.role !== stream.audience.role) return false;
@@ -5978,6 +5989,7 @@ function buildCourierWorkspace(courierId, options = {}) {
     shiftPlans: getCourierShiftPlans(courierId, 30),
     managementRecords: getManagementRecords({ subjectType: "courier", subjectId: courierId }),
     notifications: getNotifications("courier", courierId, 20),
+    unreadNotificationCount: unreadNotificationCount("courier", courierId),
     courierDailyReports: getCourierDailyReports(1000, courierId),
     announcements: getAnnouncements("courier"),
     mapsConfig: publicMapsConfig(),
@@ -6505,6 +6517,8 @@ function syncCourierEarning(courierId, reportDate = dayKey(), options = {}) {
   if (!courier) {
     throw httpError(404, "Kurye bulunamadi.");
   }
+  const paidEarning = db.prepare("SELECT id FROM courier_earnings WHERE courier_id = ? AND report_date = ? AND payment_status = 'paid'").get(courierId, reportDate);
+  if (paidEarning) return getCourierEarningById(paidEarning.id);
   const packages = deliveredPackagesForCourierEarnings(courierId, reportDate);
   initializeEarningManualComponents(courierId, reportDate);
   const existing = db.prepare("SELECT * FROM courier_earnings WHERE courier_id = ? AND report_date = ?").get(courierId, reportDate);
@@ -6608,8 +6622,8 @@ function updateCourierEarning(earningId, body = {}) {
     throw httpError(404, "Hak edis kaydi bulunamadi.");
   }
   const adminNote = trimmed(body.adminNote ?? current.admin_note);
-  if (current.payment_status === "paid" && !adminNote) {
-    throw httpError(400, "Odendi durumundaki hakedisi guncellemek icin admin notu zorunludur.");
+  if (current.payment_status === "paid") {
+    throw httpError(409, "Odenmis donem degistirilemez; acik donemde duzeltme kaydi olusturun.");
   }
   return syncCourierEarning(current.courier_id, current.report_date, {
     perPackageFee: body.perPackageFee ?? current.per_package_fee,
@@ -6623,6 +6637,10 @@ function markCourierEarningPaid(earningId, body = {}) {
   const current = db.prepare("SELECT * FROM courier_earnings WHERE id = ?").get(earningId);
   if (!current) {
     throw httpError(404, "Hak edis kaydi bulunamadi.");
+  }
+  if (current.payment_status === "paid") return getCourierEarningById(earningId);
+  if (body.paidAt && !Number.isFinite(new Date(body.paidAt).getTime())) {
+    throw httpError(400, "Gecerli bir odeme tarihi girin.");
   }
   const stamp = body.paidAt ? new Date(body.paidAt).toISOString() : nowIso();
   db.prepare(`
@@ -8334,7 +8352,8 @@ function decorateState(filter = {}) {
       : courierScoped
         ? getManagementRecords({ subjectType: "courier", subjectId: filter.courierId })
         : getManagementRecords(),
-    announcements: filter.courierId ? getAnnouncements("courier") : getAnnouncements(),
+    announcements: filter.courierId ? getAnnouncements("courier") : filter.restaurantId ? getAnnouncements("restaurant") : getAnnouncements(),
+    unreadNotificationCount: filter.courierId ? unreadNotificationCount("courier", filter.courierId) : filter.restaurantId ? unreadNotificationCount("restaurant", filter.restaurantId) : unreadNotificationCount("admin"),
     notifications: filter.courierId
       ? getNotifications("courier", filter.courierId, 20)
       : filter.restaurantId
@@ -13068,7 +13087,7 @@ async function handleApi(req, res, pathname) {
     }
     const { json: body } = await readRequestBody(req);
     const changed = markNotificationsRead("admin", null, body.ids);
-    sendJson(res, 200, { ok: true, changed, notifications: getNotifications("admin", null, 50) });
+    sendJson(res, 200, { ok: true, changed, unreadNotificationCount: unreadNotificationCount("admin"), notifications: getNotifications("admin", null, 50) });
     return;
   }
 
@@ -13745,7 +13764,7 @@ async function handleApi(req, res, pathname) {
     }
     const { json: body } = await readRequestBody(req);
     const changed = markNotificationsRead("restaurant", session.restaurant_id, body.ids);
-    sendJson(res, 200, { ok: true, changed, notifications: getNotifications("restaurant", session.restaurant_id, 50) });
+    sendJson(res, 200, { ok: true, changed, unreadNotificationCount: unreadNotificationCount("restaurant", session.restaurant_id), notifications: getNotifications("restaurant", session.restaurant_id, 50) });
     return;
   }
 
@@ -15934,7 +15953,7 @@ async function handleApi(req, res, pathname) {
     }
     const { json: body } = await readRequestBody(req);
     const changed = markNotificationsRead("courier", session.courier_id, body.ids);
-    sendJson(res, 200, { ok: true, changed, notifications: getNotifications("courier", session.courier_id, 50) });
+    sendJson(res, 200, { ok: true, changed, unreadNotificationCount: unreadNotificationCount("courier", session.courier_id), notifications: getNotifications("courier", session.courier_id, 50) });
     return;
   }
 

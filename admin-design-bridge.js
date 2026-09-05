@@ -305,7 +305,7 @@
       button.classList.toggle("text-on-primary-container", state.filter === key);
     });
     const badge = refs.notificationButton.querySelector(".da-notification-badge");
-    const count = (state.data.notifications || []).filter((item) => item.unread !== false && !item.readAt).length; badge.textContent = count; badge.hidden = count === 0;
+    const count = state.data.unreadNotificationCount ?? (state.data.notifications || []).filter((item) => item.unread !== false && !item.readAt).length; badge.textContent = count; badge.hidden = count === 0;
     const unmatchedCount = unmatchedOrders().filter((order) => !order.isResolved).length;
     if (refs.unmatchedMenuBadge) refs.unmatchedMenuBadge.textContent = String(unmatchedCount);
     const creditBalance = (state.data?.creditAccounts || []).reduce((sum, item) => sum + Number(item.balance || 0), 0);
@@ -361,11 +361,12 @@
 
   function notificationCenter() {
     const items = state.data?.notifications || [];
-    modal("Bildirim Merkezi", `<div class="da-actions" style="margin-bottom:12px"><button class="da-secondary" type="button" data-read-all ${items.some((item) => item.unread !== false && !item.readAt) ? "" : "disabled"}>Tümünü Okundu İşaretle</button></div>${items.length ? `<div class="da-list">${items.map((item) => `<div class="da-list-row"><div><b>${esc(item.message || "Bildirim")}</b><small>${dateTime(item.createdAt)}${item.readAt ? ` · Okundu ${dateTime(item.readAt)}` : " · Okunmadı"}</small></div><span class="da-badge">${esc(item.eventType || "sistem")}</span></div>`).join("")}</div>` : '<div class="da-empty">Henüz bildirim yok.</div>'}`, (root) => {
+    modal("Bildirim Merkezi", `<div class="da-actions" style="margin-bottom:12px"><button class="da-secondary" type="button" data-read-all ${(state.data?.unreadNotificationCount ?? items.some((item) => item.unread !== false && !item.readAt)) > 0 ? "" : "disabled"}>Tümünü Okundu İşaretle</button></div>${items.length ? `<div class="da-list">${items.map((item) => `<div class="da-list-row"><div><b>${esc(item.message || "Bildirim")}</b><small>${dateTime(item.createdAt)}${item.readAt ? ` · Okundu ${dateTime(item.readAt)}` : " · Okunmadı"}</small></div><span class="da-badge">${esc(item.eventType || "sistem")}</span></div>`).join("")}</div>` : '<div class="da-empty">Henüz bildirim yok.</div>'}`, (root) => {
       root.querySelector("[data-read-all]")?.addEventListener("click", async () => {
         try {
           const result = await api("/api/admin/notifications/read", { method: "POST", body: JSON.stringify({}) });
           state.data.notifications = result.notifications || [];
+          state.data.unreadNotificationCount = result.unreadNotificationCount;
           updateCounters();
           notificationCenter();
         } catch (error) { toast(error.message, "error"); }
@@ -666,7 +667,7 @@
       const reportRestaurants = data.restaurants || restaurants();
       restaurantFilter = data.selectedRestaurantId || restaurantFilter;
       const selectedRestaurant = reportRestaurants.find((restaurant) => restaurant.id === restaurantFilter);
-      const displayedTotalOrders = Number(summary.totalOrders || 0) + (rangeMode ? Number(summary.cancelledCount || 0) : 0);
+      const displayedTotalOrders = Number(summary.totalOrders || 0);
       container.innerHTML = `
         <form data-report-filter class="da-report-controls ${rangeMode ? "is-range" : ""}">
           <label>İşletme<select name="restaurantId"><option value="">Tüm işletmeler</option>${reportRestaurants.map((restaurant) => `<option value="${esc(restaurant.id)}">${esc(restaurant.name)}${restaurant.zone ? ` · ${esc(restaurant.zone)}` : ""}</option>`).join("")}</select></label>
